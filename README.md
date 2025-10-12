@@ -54,7 +54,7 @@ cd /tmp
 ```
 
 ```bash
-curl -fsSL -o supabase-install.sh https://raw.githubusercontent.com/wattfource/automated-supbase-install-unraid/main/supabase-install.sh
+wget https://raw.githubusercontent.com/wattfource/automated-supbase-install-unraid/main/supabase-install.sh
 ```
 
 ```bash
