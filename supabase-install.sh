@@ -1,10 +1,29 @@
 #!/usr/bin/env bash
-# Supabase Self-Host Interactive Setup (Debian 13)
-# Root directory: /srv/supabase
-# - SSL terminates at NPM (Unraid)
-# - Only Kong:8000 and Studio:3000 exposed to LAN
-# - Storage lives on Unraid at /mnt/user/supabase-storage/<APEX_DOMAIN>
-# - VM mounts it at /mnt/unraid/supabase-storage/<APEX_DOMAIN>
+# ============================================================================
+# Supabase Self-Host Interactive Setup for Unraid Architecture
+# ============================================================================
+#
+# ARCHITECTURE:
+#   • Unraid 7 host with cache + array
+#   • Debian 13 minimal VM running on Unraid cache (fast)
+#   • Nginx Proxy Manager (NPM) running as Docker container on Unraid HOST
+#   • Supabase containers run in the VM
+#   • Supabase storage mounted from Unraid ARRAY (slow but redundant)
+#
+# STORAGE STRATEGY:
+#   • VM & containers → Unraid cache (SSD/NVMe, fast, no redundancy needed)
+#   • Supabase storage → Unraid array (HDD, slow but 1-2 disk redundancy)
+#   • Mimics Supabase Cloud's S3 approach: compute fast, storage safe
+#   • Array path: /mnt/user/supabase-storage/<APEX_DOMAIN>
+#   • VM mount:  /mnt/unraid/supabase-storage/<APEX_DOMAIN>
+#
+# NETWORK:
+#   • SSL terminates at NPM on Unraid HOST
+#   • Only Kong:8000 and Studio:3000 exposed from VM to LAN
+#   • NPM proxies to VM IP for both endpoints
+#
+# ROOT DIRECTORY: /srv/supabase
+# ============================================================================
 
 set -euo pipefail
 
