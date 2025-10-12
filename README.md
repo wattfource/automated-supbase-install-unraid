@@ -39,24 +39,33 @@
 
 ### 2. Run Installer
 
-**From inside the Debian VM:**
+**From inside the Debian VM (run each line separately):**
 
 ```bash
 sudo -i
+```
+
+```bash
 apt update && apt -y upgrade
-cd /root
-curl -fsSL -o supabase-install.sh \
-  https://raw.githubusercontent.com/wattfource/automated-supbase-install-unraid/main/supabase-install.sh
+```
+
+```bash
+cd /tmp
+```
+
+```bash
+curl -fsSL -o supabase-install.sh https://raw.githubusercontent.com/wattfource/automated-supbase-install-unraid/main/supabase-install.sh
+```
+
+```bash
 chmod +x supabase-install.sh
+```
+
+```bash
 ./supabase-install.sh
 ```
 
-**One-liner:**
-```bash
-sudo -i bash <(curl -fsSL https://raw.githubusercontent.com/wattfource/automated-supbase-install-unraid/main/supabase-install.sh)
-```
-
-**Have ready:**
+**Have ready before you start:**
 - Domain names (apex, api subdomain, studio subdomain)
 - Unraid IP/hostname
 - NFS or SMB (if SMB: username/password)
