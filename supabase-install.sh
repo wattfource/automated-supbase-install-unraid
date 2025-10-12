@@ -3,8 +3,9 @@
 # Root directory: /srv/supabase
 # - SSL terminates at NPM (Unraid)
 # - Only Kong:8000 and Studio:3000 exposed to LAN
-# - Storage lives on Unraid at /mnt/user/supabase-storage/<FQDN>
-# - VM mounts it at /mnt/unraid/supabase-storage/<FQDN>
+# - Storage lives on Unraid at /mnt/user/supabase-storage/<APEX_DOMAIN>
+# - VM mounts it at /mnt/unraid/supabase-storage/<APEX_DOMAIN>
+
 set -euo pipefail
 
 bold() { printf "\033[1m%s\033[0m\n" "$*"; }
@@ -25,6 +26,9 @@ ask_yn() {
   done
 }
 
+valid_domain() { [[ "$1" =~ ^[A-Za-z0-9.-]+$ ]] && [[ "$1" == *.* ]] && [[ "$1" != .* ]] && [[ "$1" != *..* ]]; }
+ends_with_apex() { [[ "$1" == *".$2" ]]; }
+
 upsert_env() {
   local k="$1" v="$2" esc
   esc="$(printf '%s' "$v" | sed -e 's/[&/|]/\\&/g')"
@@ -33,20 +37,23 @@ upsert_env() {
 
 gen_b64() { openssl rand -base64 "$1"; }
 
+b64url() { openssl enc -base64 -A | tr '+/' '-_' | tr -d '='; }
+
 gen_jwt_for_role() {
   local role="$1" header payload hb pb sig iat exp
   iat=$(date +%s); exp=$((iat + 3600*24*365*5))
   header='{"typ":"JWT","alg":"HS256"}'
   payload="$(jq -nc --arg r "$role" --argjson i "$iat" --argjson e "$exp" \
     '{"role":$r,"iss":"supabase","iat":$i,"exp":$e}')"
-  hb="$(printf '%s' "$header" | openssl enc -base64 -A | tr '+/' '-_' | tr -d '=')"
-  pb="$(printf '%s' "$payload" | openssl enc -base64 -A | tr '+/' '-_' | tr -d '=')"
-  sig="$(printf '%s.%s' "$hb" "$pb" | openssl dgst -binary -sha256 -hmac "$JWT_SECRET" \
-        | openssl enc -base64 -A | tr '+/' '-_' | tr -d '=')"
+  hb="$(printf '%s' "$header" | b64url)"
+  pb="$(printf '%s' "$payload" | b64url)"
+  sig="$(printf '%s.%s' "$hb" "$pb" | openssl dgst -binary -sha256 -hmac "$JWT_SECRET" | b64url)"
   printf '%s.%s.%s\n' "$hb" "$pb" "$sig"
 }
 
 require_root
+
+# Ensure base tools
 command -v curl >/dev/null || apt update
 command -v jq   >/dev/null || apt install -y jq
 command -v openssl >/dev/null || apt install -y openssl
@@ -60,12 +67,12 @@ echo "  • Fetch official Supabase docker bundle"
 echo "  • Generate secrets + JWT keys"
 echo "  • Expose ONLY Kong:8000 and Studio:3000"
 echo "  • Pin 8443/5432/6543 to localhost"
-echo "  • Mount Unraid storage share for Supabase Storage"
+echo "  • Mount Unraid storage for Supabase Storage"
 echo "  • (Optional) enable Analytics (Logflare)"
 echo "  • (Optional) UFW/DOCKER-USER firewall hardening"
 echo
 
-# Docker install if needed
+# Docker
 if ! command -v docker >/dev/null; then
   if [[ "$(ask_yn 'Docker not found. Install Docker Engine + Compose plugin now?' y)" = y ]]; then
     install -m 0755 -d /etc/apt/keyrings
@@ -83,12 +90,23 @@ if ! command -v docker >/dev/null; then
   fi
 fi
 
-# Inputs
-APEX_FQDN="$(ask 'Project FQDN (apex domain, e.g., example.com)' 'example.com')"
-API_DOMAIN="$(ask 'API domain (e.g., api.example.com)' "api.${APEX_FQDN}")"
-STUDIO_DOMAIN="$(ask 'Studio domain (e.g., studio.example.com)' "studio.${APEX_FQDN}")"
+# Inputs (clear wording)
+while :; do
+  APEX_FQDN="$(ask 'Apex domain (no subdomain), e.g. example.com' 'example.com')"
+  if valid_domain "$APEX_FQDN" && [[ "$APEX_FQDN" != *.*.*.* ]]; then break; else err "Enter a valid apex like example.com"; fi
+done
 
-SMTP_HOST="$(ask 'SMTP host (leave empty to set placeholder)')"
+while :; do
+  API_DOMAIN="$(ask 'API hostname (FQDN), e.g. api.example.com' "api.${APEX_FQDN}")"
+  valid_domain "$API_DOMAIN" && ends_with_apex "$API_DOMAIN" "$APEX_FQDN" && break || err "Must be a FQDN ending with .$APEX_FQDN"
+done
+
+while :; do
+  STUDIO_DOMAIN="$(ask 'Studio hostname (FQDN), e.g. studio.example.com' "studio.${APEX_FQDN}")"
+  valid_domain "$STUDIO_DOMAIN" && ends_with_apex "$STUDIO_DOMAIN" "$APEX_FQDN" && break || err "Must be a FQDN ending with .$APEX_FQDN"
+done
+
+SMTP_HOST="$(ask 'SMTP host (leave empty to set placeholder and change later)')"
 if [[ -n "$SMTP_HOST" ]]; then
   SMTP_PORT="$(ask 'SMTP port' '587')"
   SMTP_USER="$(ask 'SMTP username' "no-reply@${APEX_FQDN}")"
@@ -120,8 +138,8 @@ if [[ "$STORAGE_PROTO" = "nfs" ]]; then
 else
   apt install -y cifs-utils >/dev/null
   UNRAID_HOST="$(ask 'Unraid server hostname/IP' 'unraid.lan')"
-  UNRAID_SHARE="supabase-storage"  # parent
-  UNRAID_SUBDIR="${APEX_FQDN}"     # child folder
+  UNRAID_SHARE="supabase-storage"  # parent share
+  UNRAID_SUBDIR="${APEX_FQDN}"     # subdirectory
   VM_MOUNT="/mnt/unraid/supabase-storage/${APEX_FQDN}"
   SMB_USER="$(ask 'SMB username')"
   SMB_PASS="$(ask 'SMB password')"
@@ -129,14 +147,13 @@ fi
 
 echo
 bold "Summary"
-echo "  FQDN:         $APEX_FQDN"
+echo "  Apex domain:  $APEX_FQDN"
 echo "  API:          https://$API_DOMAIN  → VM:8000 (HTTP)"
 echo "  Studio:       https://$STUDIO_DOMAIN → VM:3000 (HTTP)"
 echo "  Analytics:    $( [[ "$ENABLE_ANALYTICS" = y ]] && echo ENABLED || echo DISABLED )"
 echo "  HTTPS pin:    $( [[ "$PIN_HTTPS_LOOPBACK" = y ]] && echo 127.0.0.1:8443 || echo LAN-exposed per base )"
 echo "  Pooler pin:   $( [[ "$PIN_POOLER_LOOPBACK" = y ]] && echo 127.0.0.1:5432/6543 || echo LAN-exposed per base )"
-echo "  Storage:      Unraid → VM mount at $VM_MOUNT"
-echo "  Protocol:     $STORAGE_PROTO"
+echo "  Storage:      Unraid → VM mount at $VM_MOUNT ($STORAGE_PROTO)"
 [[ "$USE_UFW" = y ]] && echo "  Firewall:     NPM $NPM_HOST_IP allowed to 8000/3000; SSH from $ADMIN_SSH_SRC"
 echo
 [[ "$(ask_yn 'Proceed with setup?' y)" = y ]] || { err "Aborted."; exit 1; }
@@ -146,7 +163,7 @@ ROOT="/srv/supabase"
 mkdir -p "$ROOT"
 cd "$ROOT"
 
-# Fetch bundle if missing
+# Fetch official bundle if missing
 if [[ ! -f docker-compose.yml ]]; then
   info "Fetching Supabase official docker bundle..."
   rm -rf /tmp/supabase
@@ -188,7 +205,7 @@ upsert_env ENABLE_EMAIL_AUTOCONFIRM "false"
 upsert_env FILE_SIZE_LIMIT "524288000"
 upsert_env STORAGE_BACKEND "file"
 
-# Pin ports
+# Pin ports (compose respects these envs)
 upsert_env KONG_HTTP_PORT "0.0.0.0:8000"
 [[ "$PIN_HTTPS_LOOPBACK" = y ]] && upsert_env KONG_HTTPS_PORT "127.0.0.1:8443"
 if [[ "$PIN_POOLER_LOOPBACK" = y ]]; then
@@ -206,37 +223,35 @@ SERVICE_ROLE_KEY="$(gen_jwt_for_role service_role)"
 unset JWT_SECRET
 upsert_env ANON_KEY "$ANON_KEY"
 upsert_env SERVICE_ROLE_KEY "$SERVICE_ROLE_KEY"
-ok "JWT keys added."
+ok "JWT keys added to .env"
 
 # Storage mount (Unraid)
 info "Preparing storage mount at $VM_MOUNT ..."
 mkdir -p "$VM_MOUNT"
 if [[ "$STORAGE_PROTO" = "nfs" ]]; then
-  # ensure export exists on Unraid: /mnt/user/supabase-storage/<FQDN>
-  # fstab
   grep -qE "[[:space:]]$VM_MOUNT[[:space:]]" /etc/fstab || \
     echo "${UNRAID_HOST}:${UNRAID_EXPORT}  ${VM_MOUNT}  nfs  defaults  0  0" >> /etc/fstab
   mount -a || true
 else
-  # SMB credentials file
   CREDF="/root/.smb-${APEX_FQDN}.cred"
   { echo "username=${SMB_USER}"; echo "password=${SMB_PASS}"; } > "$CREDF"
   chmod 600 "$CREDF"
-  # The Unraid subdir is accessed via //host/share/subdir
   grep -qE "[[:space:]]$VM_MOUNT[[:space:]]" /etc/fstab || \
     echo "//${UNRAID_HOST}/${UNRAID_SHARE}/${UNRAID_SUBDIR}  ${VM_MOUNT}  cifs  credentials=${CREDF},iocharset=utf8,file_mode=0644,dir_mode=0755,noperm  0  0" >> /etc/fstab
   mount -a || true
 fi
-ok "Storage mounted (verify with: df -h | grep supabase-storage)."
+ok "Storage mounted (check: df -h | grep supabase-storage)."
 
 # Compose override: expose only API/Studio, wire storage volume
 info "Writing docker-compose.override.yml ..."
 cat > docker-compose.override.yml <<YAML
 services:
+  # Publish ONLY API 8000
   kong:
     ports:
       - "0.0.0.0:8000:8000"
 
+  # Publish ONLY Studio 3000
   studio:
     ports:
       - "0.0.0.0:3000:3000"
@@ -275,7 +290,7 @@ ok "Override written."
 info "Starting Supabase containers ..."
 docker compose pull
 docker compose up -d
-# Recreate to apply pin changes
+# Recreate key services to ensure port pins applied
 docker compose rm -sf kong supavisor >/dev/null 2>&1 || true
 docker compose up -d kong supavisor studio storage
 
@@ -316,19 +331,19 @@ cat <<EOF
    - ${STUDIO_DOMAIN} →  http://<VM-IP>:3000  (Protect with Access List/IP allowlist)
 
 2) Verify storage mount:
-   - VM path: ${VM_MOUNT}
-   - Inside 'storage' container: /var/lib/storage
-   - Test: docker compose exec storage ls -l /var/lib/storage
+   VM path: ${VM_MOUNT}
+   Inside 'storage' container: /var/lib/storage
+   Test: docker compose exec storage ls -l /var/lib/storage
 
 3) Email:
-   - .env SMTP host: $(grep '^GOTRUE_SMTP_HOST=' .env | cut -d= -f2- || true)
-   - Update real credentials if placeholders, then: docker compose up -d auth
+   Update SMTP in .env if placeholders, then: docker compose up -d auth
 
-4) Backups (inside-container, safe):
+4) Backups (safe):
    cd /srv/supabase
+   mkdir -p backups
    docker compose exec -T db pg_dump -U postgres -Fc -d postgres > "backups/\$(date +%F_%H-%M).dump"
 
-5) Updates:
+5) Update stack:
    docker compose pull && docker compose up -d
 
 Files:
@@ -336,4 +351,4 @@ Files:
   • Storage mount: ${VM_MOUNT}  (from Unraid ${STORAGE_PROTO})
 EOF
 
-ok "Supabase is up. Visit: https://${STUDIO_DOMAIN} and use https://${API_DOMAIN} in your app."
+ok "Supabase is up. Visit: https://${STUDIO_DOMAIN} (Studio) and use https://${API_DOMAIN} in your app."
