@@ -73,7 +73,8 @@ gen_jwt_for_role() {
 require_root
 
 # Ensure base tools
-command -v curl >/dev/null || apt update
+command -v curl >/dev/null || { apt update; apt install -y curl; }
+command -v gpg >/dev/null || apt install -y gpg
 command -v jq   >/dev/null || apt install -y jq
 command -v openssl >/dev/null || apt install -y openssl
 command -v git  >/dev/null || apt install -y git
