@@ -71,6 +71,10 @@ chmod +x supabase-install.sh
 - NFS or SMB (if SMB: username/password)
 - SMTP settings (optional, can skip)
 
+**During installation:**
+- Press Enter to accept `[default: value]` shown in brackets
+- Fields marked `REQUIRED` must be entered (no default)
+
 ### 3. After Install
 
 **Configure NPM (on Unraid):**
@@ -187,12 +191,17 @@ studio.yourdomain.com → Unraid IP
 <summary><b>4. What the Installer Does</b></summary>
 
 Interactive prompts for:
-- Domain names (apex, api, studio)
-- SMTP settings (optional)
-- Analytics enable/disable
-- Port pinning (security)
-- Firewall rules (optional UFW)
-- Unraid storage (NFS/SMB)
+- Domain names (apex, api, studio) - defaults provided
+- SMTP settings (optional - can skip)
+- Analytics enable/disable (default: no)
+- Port pinning (security, default: yes)
+- Firewall rules (optional UFW, default: no)
+- Unraid storage (NFS/SMB) - NFS default, SMB requires credentials
+
+**Prompt format:**
+- `[default: value]` - Press Enter to accept
+- `(REQUIRED)` - No default, must enter value
+- `[Y/n]` or `[N/y]` - Capital letter is default
 
 Automated actions:
 - Install Docker if missing

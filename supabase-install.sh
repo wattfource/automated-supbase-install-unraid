@@ -91,6 +91,9 @@ echo "  • Mount Unraid storage for Supabase Storage"
 echo "  • (Optional) enable Analytics (Logflare)"
 echo "  • (Optional) UFW/DOCKER-USER firewall hardening"
 echo
+warn "PROMPTS: Press Enter to accept [default: value] shown in brackets"
+warn "         Fields marked REQUIRED have no default and must be entered"
+echo
 
 # Docker
 if ! command -v docker >/dev/null; then
@@ -111,58 +114,66 @@ if ! command -v docker >/dev/null; then
 fi
 
 # Inputs (clear wording)
+info "Domain Configuration"
 while :; do
-  APEX_FQDN="$(ask 'Apex domain (no subdomain), e.g. example.com' 'example.com')"
+  APEX_FQDN="$(ask 'Apex domain (no subdomain, e.g. example.com) [default: example.com]' 'example.com')"
   if valid_domain "$APEX_FQDN" && [[ "$APEX_FQDN" != *.*.*.* ]]; then break; else err "Enter a valid apex like example.com"; fi
 done
 
 while :; do
-  API_DOMAIN="$(ask 'API hostname (FQDN), e.g. api.example.com' "api.${APEX_FQDN}")"
+  API_DOMAIN="$(ask "API subdomain FQDN [default: api.${APEX_FQDN}]" "api.${APEX_FQDN}")"
   valid_domain "$API_DOMAIN" && ends_with_apex "$API_DOMAIN" "$APEX_FQDN" && break || err "Must be a FQDN ending with .$APEX_FQDN"
 done
 
 while :; do
-  STUDIO_DOMAIN="$(ask 'Studio hostname (FQDN), e.g. studio.example.com' "studio.${APEX_FQDN}")"
+  STUDIO_DOMAIN="$(ask "Studio subdomain FQDN [default: studio.${APEX_FQDN}]" "studio.${APEX_FQDN}")"
   valid_domain "$STUDIO_DOMAIN" && ends_with_apex "$STUDIO_DOMAIN" "$APEX_FQDN" && break || err "Must be a FQDN ending with .$APEX_FQDN"
 done
 
-SMTP_HOST="$(ask 'SMTP host (leave empty to set placeholder and change later)')"
+echo
+info "SMTP Email Configuration (optional - can configure later)"
+SMTP_HOST="$(ask 'SMTP host (optional, press Enter to skip) [default: none]')"
 if [[ -n "$SMTP_HOST" ]]; then
-  SMTP_PORT="$(ask 'SMTP port' '587')"
-  SMTP_USER="$(ask 'SMTP username' "no-reply@${APEX_FQDN}")"
-  SMTP_PASS="$(ask 'SMTP password (empty to auto-generate)')"; [[ -z "$SMTP_PASS" ]] && SMTP_PASS="$(gen_b64 24)"
-  SMTP_ADMIN="$(ask 'SMTP admin email' "$SMTP_USER")"
+  SMTP_PORT="$(ask 'SMTP port [default: 587]' '587')"
+  SMTP_USER="$(ask "SMTP username [default: no-reply@${APEX_FQDN}]" "no-reply@${APEX_FQDN}")"
+  SMTP_PASS="$(ask 'SMTP password (optional, press Enter to auto-generate) [default: auto-generate]')"; [[ -z "$SMTP_PASS" ]] && SMTP_PASS="$(gen_b64 24)"
+  SMTP_ADMIN="$(ask "SMTP admin email [default: ${SMTP_USER}]" "$SMTP_USER")"
 else
   SMTP_PORT="587"; SMTP_USER="no-reply@${APEX_FQDN}"; SMTP_PASS="$(gen_b64 24)"; SMTP_ADMIN="$SMTP_USER"
 fi
 
-ENABLE_ANALYTICS="$(ask_yn 'Enable Analytics (Logflare) (publishes 4000 to LAN)' n)"
-PIN_HTTPS_LOOPBACK="$(ask_yn 'Pin Kong HTTPS 8443 to localhost (recommended)' y)"
-PIN_POOLER_LOOPBACK="$(ask_yn 'Pin Supavisor 5432/6543 to localhost (recommended)' y)"
+echo
+info "Service Configuration"
+ENABLE_ANALYTICS="$(ask_yn 'Enable Analytics (Logflare) - publishes port 4000 to LAN?' n)"
+PIN_HTTPS_LOOPBACK="$(ask_yn 'Pin Kong HTTPS 8443 to localhost only? (recommended)' y)"
+PIN_POOLER_LOOPBACK="$(ask_yn 'Pin Supavisor 5432/6543 to localhost only? (recommended)' y)"
 
-USE_UFW="$(ask_yn 'Configure UFW + DOCKER-USER rules to only allow your NPM host to 8000/3000?' n)"
+echo
+info "Firewall Configuration (optional)"
+USE_UFW="$(ask_yn 'Configure UFW firewall to restrict 8000/3000 to NPM only?' n)"
 if [[ "$USE_UFW" = y ]]; then
-  NPM_HOST_IP="$(ask 'Unraid NPM host IP (e.g., 192.168.1.75)')"
-  ADMIN_SSH_SRC="$(ask 'Admin IP/subnet for SSH (e.g., 192.168.1.0/24)' '192.168.1.0/24')"
+  NPM_HOST_IP="$(ask 'Unraid NPM host IP (REQUIRED, e.g. 192.168.1.75) [no default]')"
+  ADMIN_SSH_SRC="$(ask 'Admin IP/subnet for SSH [default: 192.168.1.0/24]' '192.168.1.0/24')"
 fi
 
 # Storage mount choice
-bold "Unraid Storage Mount"
-echo "We will mount your Unraid storage at: /mnt/unraid/supabase-storage/${APEX_FQDN}"
-STORAGE_PROTO="$(ask 'Storage protocol (nfs|smb)' 'nfs')"
+echo
+bold "Unraid Storage Mount Configuration"
+echo "Storage will be mounted at: /mnt/unraid/supabase-storage/${APEX_FQDN}"
+STORAGE_PROTO="$(ask 'Storage protocol: nfs or smb? [default: nfs]' 'nfs')"
 if [[ "$STORAGE_PROTO" = "nfs" ]]; then
   apt install -y nfs-common >/dev/null
-  UNRAID_HOST="$(ask 'Unraid server hostname/IP' 'unraid.lan')"
+  UNRAID_HOST="$(ask 'Unraid server hostname or IP [default: unraid.lan]' 'unraid.lan')"
   UNRAID_EXPORT="/mnt/user/supabase-storage/${APEX_FQDN}"
   VM_MOUNT="/mnt/unraid/supabase-storage/${APEX_FQDN}"
 else
   apt install -y cifs-utils >/dev/null
-  UNRAID_HOST="$(ask 'Unraid server hostname/IP' 'unraid.lan')"
+  UNRAID_HOST="$(ask 'Unraid server hostname or IP [default: unraid.lan]' 'unraid.lan')"
   UNRAID_SHARE="supabase-storage"  # parent share
   UNRAID_SUBDIR="${APEX_FQDN}"     # subdirectory
   VM_MOUNT="/mnt/unraid/supabase-storage/${APEX_FQDN}"
-  SMB_USER="$(ask 'SMB username')"
-  SMB_PASS="$(ask 'SMB password')"
+  SMB_USER="$(ask 'SMB username (REQUIRED) [no default]')"
+  SMB_PASS="$(ask 'SMB password (REQUIRED) [no default]')"
 fi
 
 echo
@@ -185,9 +196,16 @@ cd "$ROOT"
 
 # Fetch official bundle if missing
 if [[ ! -f docker-compose.yml ]]; then
-  info "Fetching Supabase official docker bundle..."
+  info "Fetching Supabase official docker bundle (sparse checkout: docker/ only)..."
   rm -rf /tmp/supabase
-  git clone --depth 1 https://github.com/supabase/supabase /tmp/supabase
+  mkdir -p /tmp/supabase
+  cd /tmp/supabase
+  git init
+  git remote add origin https://github.com/supabase/supabase
+  git config core.sparseCheckout true
+  echo "docker/*" >> .git/info/sparse-checkout
+  git pull --depth 1 origin master
+  cd "$ROOT"
   cp -rf /tmp/supabase/docker/* "$ROOT"/
   cp /tmp/supabase/docker/.env.example "$ROOT"/.env || touch "$ROOT/.env"
   rm -rf /tmp/supabase
