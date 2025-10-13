@@ -116,28 +116,28 @@ fi
 # Inputs (clear wording)
 info "Domain Configuration"
 while :; do
-  APEX_FQDN="$(ask 'Apex domain (no subdomain, e.g. example.com) [default: example.com]' 'example.com')"
+  APEX_FQDN="$(ask 'Apex domain (e.g. example.com)' 'example.com')"
   if valid_domain "$APEX_FQDN" && [[ "$APEX_FQDN" != *.*.*.* ]]; then break; else err "Enter a valid apex like example.com"; fi
 done
 
 while :; do
-  API_DOMAIN="$(ask "API subdomain FQDN [default: api.${APEX_FQDN}]" "api.${APEX_FQDN}")"
+  API_DOMAIN="$(ask "API subdomain (e.g. api.example.com)" "api.${APEX_FQDN}")"
   valid_domain "$API_DOMAIN" && ends_with_apex "$API_DOMAIN" "$APEX_FQDN" && break || err "Must be a FQDN ending with .$APEX_FQDN"
 done
 
 while :; do
-  STUDIO_DOMAIN="$(ask "Studio subdomain FQDN [default: studio.${APEX_FQDN}]" "studio.${APEX_FQDN}")"
+  STUDIO_DOMAIN="$(ask "Studio subdomain (e.g. studio.example.com)" "studio.${APEX_FQDN}")"
   valid_domain "$STUDIO_DOMAIN" && ends_with_apex "$STUDIO_DOMAIN" "$APEX_FQDN" && break || err "Must be a FQDN ending with .$APEX_FQDN"
 done
 
 echo
 info "SMTP Email Configuration (optional - can configure later)"
-SMTP_HOST="$(ask 'SMTP host (optional, press Enter to skip) [default: none]')"
+SMTP_HOST="$(ask 'SMTP host (optional, press Enter to skip)')"
 if [[ -n "$SMTP_HOST" ]]; then
-  SMTP_PORT="$(ask 'SMTP port [default: 587]' '587')"
-  SMTP_USER="$(ask "SMTP username [default: no-reply@${APEX_FQDN}]" "no-reply@${APEX_FQDN}")"
-  SMTP_PASS="$(ask 'SMTP password (optional, press Enter to auto-generate) [default: auto-generate]')"; [[ -z "$SMTP_PASS" ]] && SMTP_PASS="$(gen_b64 24)"
-  SMTP_ADMIN="$(ask "SMTP admin email [default: ${SMTP_USER}]" "$SMTP_USER")"
+  SMTP_PORT="$(ask 'SMTP port' '587')"
+  SMTP_USER="$(ask 'SMTP username' "no-reply@${APEX_FQDN}")"
+  SMTP_PASS="$(ask 'SMTP password (optional, press Enter to auto-generate)')"; [[ -z "$SMTP_PASS" ]] && SMTP_PASS="$(gen_b64 24)"
+  SMTP_ADMIN="$(ask 'SMTP admin email' "$SMTP_USER")"
 else
   SMTP_PORT="587"; SMTP_USER="no-reply@${APEX_FQDN}"; SMTP_PASS="$(gen_b64 24)"; SMTP_ADMIN="$SMTP_USER"
 fi
@@ -152,28 +152,28 @@ echo
 info "Firewall Configuration (optional)"
 USE_UFW="$(ask_yn 'Configure UFW firewall to restrict 8000/3000 to NPM only?' n)"
 if [[ "$USE_UFW" = y ]]; then
-  NPM_HOST_IP="$(ask 'Unraid NPM host IP (REQUIRED, e.g. 192.168.1.75) [no default]')"
-  ADMIN_SSH_SRC="$(ask 'Admin IP/subnet for SSH [default: 192.168.1.0/24]' '192.168.1.0/24')"
+  NPM_HOST_IP="$(ask 'Unraid NPM host IP (REQUIRED, e.g. 192.168.1.75)')"
+  ADMIN_SSH_SRC="$(ask 'Admin IP/subnet for SSH' '192.168.1.0/24')"
 fi
 
 # Storage mount choice
 echo
 bold "Unraid Storage Mount Configuration"
 echo "Storage will be mounted at: /mnt/unraid/supabase-storage/${APEX_FQDN}"
-STORAGE_PROTO="$(ask 'Storage protocol: nfs or smb? [default: nfs]' 'nfs')"
+STORAGE_PROTO="$(ask 'Storage protocol: nfs or smb?' 'nfs')"
 if [[ "$STORAGE_PROTO" = "nfs" ]]; then
   apt install -y nfs-common >/dev/null
-  UNRAID_HOST="$(ask 'Unraid server hostname or IP [default: unraid.lan]' 'unraid.lan')"
+  UNRAID_HOST="$(ask 'Unraid server hostname or IP' 'unraid.lan')"
   UNRAID_EXPORT="/mnt/user/supabase-storage/${APEX_FQDN}"
   VM_MOUNT="/mnt/unraid/supabase-storage/${APEX_FQDN}"
 else
   apt install -y cifs-utils >/dev/null
-  UNRAID_HOST="$(ask 'Unraid server hostname or IP [default: unraid.lan]' 'unraid.lan')"
+  UNRAID_HOST="$(ask 'Unraid server hostname or IP' 'unraid.lan')"
   UNRAID_SHARE="supabase-storage"  # parent share
   UNRAID_SUBDIR="${APEX_FQDN}"     # subdirectory
   VM_MOUNT="/mnt/unraid/supabase-storage/${APEX_FQDN}"
-  SMB_USER="$(ask 'SMB username (REQUIRED) [no default]')"
-  SMB_PASS="$(ask 'SMB password (REQUIRED) [no default]')"
+  SMB_USER="$(ask 'SMB username (REQUIRED)')"
+  SMB_PASS="$(ask 'SMB password (REQUIRED)')"
 fi
 
 echo
@@ -306,21 +306,17 @@ services:
   realtime:
     ports: []
 
+  # Analytics: only publish port if enabled
+  analytics:
+    ports: $( [[ "$ENABLE_ANALYTICS" = y ]] && echo '["0.0.0.0:4000:4000"]' || echo '[]' )
+
   storage:
     ports: []
     volumes:
       - ${VM_MOUNT}:/var/lib/storage
 YAML
 
-if [[ "$ENABLE_ANALYTICS" = y ]]; then
-  warn "Analytics enabled: upstream publishes 4000 to LAN."
-else
-  cat >> docker-compose.override.yml <<'YAML'
-
-  analytics:
-    profiles: ["dev"]   # disabled by default; enable later with COMPOSE_PROFILES=dev
-YAML
-fi
+[[ "$ENABLE_ANALYTICS" = y ]] && warn "Analytics enabled: publishes port 4000 to LAN."
 
 ok "Override written."
 

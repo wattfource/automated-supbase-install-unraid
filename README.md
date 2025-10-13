@@ -72,8 +72,8 @@ chmod +x supabase-install.sh
 - SMTP settings (optional, can skip)
 
 **During installation:**
-- Press Enter to accept `[default: value]` shown in brackets
-- Fields marked `REQUIRED` must be entered (no default)
+- Press Enter to accept defaults shown in `[brackets]`
+- Fields marked `(REQUIRED)` have no default
 
 ### 3. After Install
 
@@ -199,9 +199,9 @@ Interactive prompts for:
 - Unraid storage (NFS/SMB) - NFS default, SMB requires credentials
 
 **Prompt format:**
-- `[default: value]` - Press Enter to accept
+- `[value]` - Press Enter to accept default
 - `(REQUIRED)` - No default, must enter value
-- `[Y/n]` or `[N/y]` - Capital letter is default
+- `[Y/n]` or `[N/y]` - Capital = default
 
 Automated actions:
 - Install Docker if missing
