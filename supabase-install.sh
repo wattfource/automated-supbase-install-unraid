@@ -113,15 +113,24 @@ if ! command -v docker >/dev/null; then
   fi
 fi
 
-# Inputs (clear wording)
-info "Domain Configuration"
+# ============================================================
+# DOMAIN CONFIGURATION
+# ============================================================
+echo
+bold "1. Domain Configuration"
+info "Set the domains for your Supabase instance:"
+echo "  • Apex domain: Your main domain (no subdomain)"
+echo "  • Kong API: All API requests go through Kong gateway (REST, Auth, Storage, etc.)"
+echo "  • Studio: Web interface for managing your database, auth, storage"
+echo
+
 while :; do
   APEX_FQDN="$(ask 'Apex domain (e.g. example.com)' 'example.com')"
   if valid_domain "$APEX_FQDN" && [[ "$APEX_FQDN" != *.*.*.* ]]; then break; else err "Enter a valid apex like example.com"; fi
 done
 
 while :; do
-  API_DOMAIN="$(ask "API subdomain (e.g. api.example.com)" "api.${APEX_FQDN}")"
+  API_DOMAIN="$(ask "Kong API subdomain (e.g. api.example.com)" "api.${APEX_FQDN}")"
   valid_domain "$API_DOMAIN" && ends_with_apex "$API_DOMAIN" "$APEX_FQDN" && break || err "Must be a FQDN ending with .$APEX_FQDN"
 done
 
@@ -130,8 +139,31 @@ while :; do
   valid_domain "$STUDIO_DOMAIN" && ends_with_apex "$STUDIO_DOMAIN" "$APEX_FQDN" && break || err "Must be a FQDN ending with .$APEX_FQDN"
 done
 
+# ============================================================
+# PORT CONFIGURATION
+# ============================================================
 echo
-info "SMTP Email Configuration (optional - can configure later)"
+bold "2. Port Configuration"
+info "Configure which ports services listen on:"
+echo "  • Kong HTTP: Main API endpoint (required, exposes to LAN)"
+echo "  • Studio: Web UI port (required, exposes to LAN)"
+echo "  • Kong HTTPS: Optional SSL endpoint (8443, can pin to localhost since NPM handles SSL)"
+echo "  • Analytics: Logflare analytics port (4000, optional)"
+echo
+
+KONG_HTTP_PORT="$(ask 'Kong API HTTP port' '8000')"
+STUDIO_PORT="$(ask 'Studio web UI port' '3000')"
+
+# ============================================================
+# SMTP CONFIGURATION
+# ============================================================
+echo
+bold "3. Email Configuration (Optional)"
+info "Configure SMTP for auth emails (signups, password resets, etc.):"
+echo "  • Can be configured later by editing /srv/supabase/.env"
+echo "  • Leave blank to skip for now"
+echo
+
 SMTP_HOST="$(ask 'SMTP host (optional, press Enter to skip)')"
 if [[ -n "$SMTP_HOST" ]]; then
   SMTP_PORT="$(ask 'SMTP port' '587')"
@@ -142,24 +174,53 @@ else
   SMTP_PORT="587"; SMTP_USER="no-reply@${APEX_FQDN}"; SMTP_PASS="$(gen_b64 24)"; SMTP_ADMIN="$SMTP_USER"
 fi
 
+# ============================================================
+# SECURITY CONFIGURATION
+# ============================================================
 echo
-info "Service Configuration"
-ENABLE_ANALYTICS="$(ask_yn 'Enable Analytics (Logflare) - publishes port 4000 to LAN?' n)"
-PIN_HTTPS_LOOPBACK="$(ask_yn 'Pin Kong HTTPS 8443 to localhost only? (recommended)' y)"
-PIN_POOLER_LOOPBACK="$(ask_yn 'Pin Supavisor 5432/6543 to localhost only? (recommended)' y)"
+bold "4. Security Configuration"
+info "Pin sensitive ports to localhost for security:"
+echo "  • Database (5432): NEVER exposed - internal to Docker network only"
+echo "  • Kong HTTPS (8443): Pin to localhost since NPM handles SSL (recommended: YES)"
+echo "  • Supavisor Pooler (6543): Direct connection pooling (recommended: YES = localhost only)"
+echo "  • Pinning means only local processes can access, not the LAN"
+echo "  • NPM proxies to Kong HTTP (${KONG_HTTP_PORT}) which remains LAN-accessible"
+echo
 
+ENABLE_ANALYTICS="$(ask_yn 'Enable Analytics (Logflare) - publishes port 4000 to LAN?' n)"
+PIN_HTTPS_LOOPBACK="$(ask_yn 'Pin Kong HTTPS (8443) to localhost only?' y)"
+PIN_POOLER_LOOPBACK="$(ask_yn 'Pin Supavisor Pooler (6543) to localhost only?' y)"
+
+bold "5. Firewall Configuration (Optional)"
+info "Restrict Kong/Studio ports to only allow NPM access:"
+echo "  • Uses UFW + Docker iptables rules"
+echo "  • Blocks direct access to Kong (${KONG_HTTP_PORT}) and Studio (${STUDIO_PORT}) from LAN"
+echo "  • Only allows NPM host IP to connect"
+echo "  • Also configures SSH access restrictions"
+echo "  • Recommended if VM is exposed to untrusted networks (default: NO for home LANs)"
 echo
-info "Firewall Configuration (optional)"
-USE_UFW="$(ask_yn 'Configure UFW firewall to restrict 8000/3000 to NPM only?' n)"
+
+USE_UFW="$(ask_yn 'Configure UFW firewall rules?' n)"
 if [[ "$USE_UFW" = y ]]; then
   NPM_HOST_IP="$(ask 'Unraid NPM host IP (REQUIRED, e.g. 192.168.1.75)')"
   ADMIN_SSH_SRC="$(ask 'Admin IP/subnet for SSH' '192.168.1.0/24')"
 fi
 
-# Storage mount choice
+# ============================================================
+# STORAGE CONFIGURATION
+# ============================================================
 echo
-bold "Unraid Storage Mount Configuration"
-echo "Storage will be mounted at: /mnt/unraid/supabase-storage/${APEX_FQDN}"
+bold "6. Unraid Storage Mount Configuration"
+info "Mount Unraid array storage for Supabase user files:"
+echo "  • VM/containers run on cache (fast SSD/NVMe)"
+echo "  • User uploaded files stored on array (slow HDD but parity-protected)"
+echo "  • Mimics Supabase Cloud's S3 architecture: compute fast, storage safe"
+echo "  • NFS: Simpler, no credentials, good for trusted LANs (recommended)"
+echo "  • SMB/CIFS: Requires username/password, more compatible"
+echo
+echo "Mount point will be: /mnt/unraid/supabase-storage/${APEX_FQDN}"
+echo
+
 STORAGE_PROTO="$(ask 'Storage protocol: nfs or smb?' 'nfs')"
 if [[ "$STORAGE_PROTO" = "nfs" ]]; then
   apt install -y nfs-common >/dev/null
@@ -177,15 +238,16 @@ else
 fi
 
 echo
-bold "Summary"
+bold "=== Configuration Summary ==="
 echo "  Apex domain:  $APEX_FQDN"
-echo "  API:          https://$API_DOMAIN  → VM:8000 (HTTP)"
-echo "  Studio:       https://$STUDIO_DOMAIN → VM:3000 (HTTP)"
-echo "  Analytics:    $( [[ "$ENABLE_ANALYTICS" = y ]] && echo ENABLED || echo DISABLED )"
-echo "  HTTPS pin:    $( [[ "$PIN_HTTPS_LOOPBACK" = y ]] && echo 127.0.0.1:8443 || echo LAN-exposed per base )"
-echo "  Pooler pin:   $( [[ "$PIN_POOLER_LOOPBACK" = y ]] && echo 127.0.0.1:5432/6543 || echo LAN-exposed per base )"
+echo "  Kong API:     https://$API_DOMAIN  → VM:${KONG_HTTP_PORT} (HTTP)"
+echo "  Studio:       https://$STUDIO_DOMAIN → VM:${STUDIO_PORT} (HTTP)"
+echo "  Analytics:    $( [[ "$ENABLE_ANALYTICS" = y ]] && echo "ENABLED (port 4000)" || echo DISABLED )"
+echo "  Kong HTTPS:   $( [[ "$PIN_HTTPS_LOOPBACK" = y ]] && echo "127.0.0.1:8443 (localhost only)" || echo "0.0.0.0:8443 (LAN-exposed)" )"
+echo "  Pooler:       $( [[ "$PIN_POOLER_LOOPBACK" = y ]] && echo "127.0.0.1:6543 (localhost only)" || echo "0.0.0.0:6543 (LAN-exposed)" )"
+echo "  Database:     Internal only (never exposed)"
 echo "  Storage:      Unraid → VM mount at $VM_MOUNT ($STORAGE_PROTO)"
-[[ "$USE_UFW" = y ]] && echo "  Firewall:     NPM $NPM_HOST_IP allowed to 8000/3000; SSH from $ADMIN_SSH_SRC"
+[[ "$USE_UFW" = y ]] && echo "  Firewall:     NPM $NPM_HOST_IP allowed to ${KONG_HTTP_PORT}/${STUDIO_PORT}; SSH from $ADMIN_SSH_SRC"
 echo
 [[ "$(ask_yn 'Proceed with setup?' y)" = y ]] || { err "Aborted."; exit 1; }
 
@@ -244,11 +306,15 @@ upsert_env FILE_SIZE_LIMIT "524288000"
 upsert_env STORAGE_BACKEND "file"
 
 # Pin ports (compose respects these envs)
-upsert_env KONG_HTTP_PORT "0.0.0.0:8000"
-[[ "$PIN_HTTPS_LOOPBACK" = y ]] && upsert_env KONG_HTTPS_PORT "127.0.0.1:8443"
+# Note: POSTGRES_PORT is the DB's internal port, not Docker mapping - always 5432
+upsert_env KONG_HTTP_PORT "0.0.0.0:${KONG_HTTP_PORT}"
+[[ "$PIN_HTTPS_LOOPBACK" = y ]] && upsert_env KONG_HTTPS_PORT "127.0.0.1:8443" || upsert_env KONG_HTTPS_PORT "0.0.0.0:8443"
+
+# Supavisor pooler ports (optional exposure)
 if [[ "$PIN_POOLER_LOOPBACK" = y ]]; then
-  upsert_env POSTGRES_PORT "127.0.0.1:5432"
   upsert_env POOLER_PROXY_PORT_TRANSACTION "127.0.0.1:6543"
+else
+  upsert_env POOLER_PROXY_PORT_TRANSACTION "0.0.0.0:6543"
 fi
 
 chmod 600 .env
@@ -284,15 +350,15 @@ ok "Storage mounted (check: df -h | grep supabase-storage)."
 info "Writing docker-compose.override.yml ..."
 cat > docker-compose.override.yml <<YAML
 services:
-  # Publish ONLY API 8000
+  # Publish ONLY Kong API
   kong:
     ports:
-      - "0.0.0.0:8000:8000"
+      - "0.0.0.0:${KONG_HTTP_PORT}:8000"
 
-  # Publish ONLY Studio 3000
+  # Publish ONLY Studio
   studio:
     ports:
-      - "0.0.0.0:3000:3000"
+      - "0.0.0.0:${STUDIO_PORT}:3000"
 
   # keep others internal
   supavisor:
@@ -340,16 +406,15 @@ if [[ "$USE_UFW" = y ]]; then
   ufw default deny incoming
   ufw default allow outgoing
   ufw allow from "$ADMIN_SSH_SRC" to any port 22 proto tcp
-  ufw allow from "$NPM_HOST_IP" to any port 8000 proto tcp
-  ufw allow from "$NPM_HOST_IP" to any port 3000 proto tcp
+  ufw allow from "$NPM_HOST_IP" to any port "$KONG_HTTP_PORT" proto tcp
+  ufw allow from "$NPM_HOST_IP" to any port "$STUDIO_PORT" proto tcp
   ufw --force enable
 
-  iptables -I DOCKER-USER -s "$NPM_HOST_IP" -p tcp --dport 8000 -j ACCEPT
-  iptables -I DOCKER-USER -s "$NPM_HOST_IP" -p tcp --dport 3000 -j ACCEPT
-  iptables -I DOCKER-USER -p tcp --dport 8000 -j DROP
-  iptables -I DOCKER-USER -p tcp --dport 3000 -j DROP
+  iptables -I DOCKER-USER -s "$NPM_HOST_IP" -p tcp --dport "$KONG_HTTP_PORT" -j ACCEPT
+  iptables -I DOCKER-USER -s "$NPM_HOST_IP" -p tcp --dport "$STUDIO_PORT" -j ACCEPT
+  iptables -I DOCKER-USER -p tcp --dport "$KONG_HTTP_PORT" -j DROP
+  iptables -I DOCKER-USER -p tcp --dport "$STUDIO_PORT" -j DROP
   iptables -I DOCKER-USER -p tcp --dport 8443 -j DROP
-  iptables -I DOCKER-USER -p tcp --dport 5432 -j DROP
   iptables -I DOCKER-USER -p tcp --dport 6543 -j DROP
   iptables -I DOCKER-USER -p tcp --dport 4000 -j DROP
   netfilter-persistent save >/dev/null
@@ -361,8 +426,8 @@ echo
 bold "Done! Next steps"
 cat <<EOF
 1) In Nginx Proxy Manager on Unraid, create two Proxy Hosts:
-   - ${API_DOMAIN}    →  http://<VM-IP>:8000  (Enable Websockets; SSL at NPM)
-   - ${STUDIO_DOMAIN} →  http://<VM-IP>:3000  (Protect with Access List/IP allowlist)
+   - ${API_DOMAIN}    →  http://localhost:${KONG_HTTP_PORT}  (Enable Websockets; SSL at NPM)
+   - ${STUDIO_DOMAIN} →  http://localhost:${STUDIO_PORT}  (Protect with Access List/IP allowlist)
 
 2) Verify storage mount:
    VM path: ${VM_MOUNT}
@@ -383,6 +448,7 @@ cat <<EOF
 Files:
   • Project: /srv/supabase
   • Storage mount: ${VM_MOUNT}  (from Unraid ${STORAGE_PROTO})
+  • Ports: Kong=${KONG_HTTP_PORT}, Studio=${STUDIO_PORT}
 EOF
 
 ok "Supabase is up. Visit: https://${STUDIO_DOMAIN} (Studio) and use https://${API_DOMAIN} in your app."
