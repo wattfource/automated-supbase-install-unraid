@@ -191,11 +191,12 @@ studio.yourdomain.com → Unraid IP
 <summary><b>4. What the Installer Does</b></summary>
 
 Interactive prompts for:
-- Domain names (apex, api, studio) - defaults provided
+- Domain names (apex, Kong API, Studio) - defaults provided
+- Port numbers (Kong, Studio) - defaults: 8000, 3000
 - SMTP settings (optional - can skip)
 - Analytics enable/disable (default: no)
-- Port pinning (security, default: yes)
-- Firewall rules (optional UFW, default: no)
+- Network access (localhost-only vs network-accessible, explained in plain English)
+- Firewall rules (optional UFW, recommended)
 - Unraid storage (NFS/SMB) - NFS default, SMB requires credentials
 
 **Prompt format:**
@@ -286,6 +287,24 @@ User files survive on array (parity-protected)
 **Failure scenarios:**
 - Cache fails: VM lost, user files safe, rebuild VM + restore DB
 - Array disk fails: Unraid rebuilds via parity, zero downtime
+
+**Security concepts explained:**
+
+*Localhost-only (binding to 127.0.0.1):*
+- Service NOT on the network at all
+- Only processes on the same computer can connect
+- Can't be reached from LAN, even without firewall
+- Example: Kong HTTPS (8443) - NPM uses HTTP anyway
+
+*Network-accessible (binding to 0.0.0.0):*
+- Service IS on the network
+- Can be reached from LAN (if firewall allows)
+- Example: Kong HTTP (8000), Studio (3000)
+
+*Firewall blocking (UFW):*
+- Service is on network, but firewall blocks most connections
+- Like a bouncer at a club door
+- Example: Kong/Studio accessible only from NPM's IP
 
 **Locations:**
 ```

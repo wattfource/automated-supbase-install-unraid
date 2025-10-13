@@ -179,31 +179,68 @@ fi
 # ============================================================
 echo
 bold "4. Security Configuration"
-info "Pin sensitive ports to localhost for security:"
-echo "  • Database (5432): NEVER exposed - internal to Docker network only"
-echo "  • Kong HTTPS (8443): Pin to localhost since NPM handles SSL (recommended: YES)"
-echo "  • Supavisor Pooler (6543): Direct connection pooling (recommended: YES = localhost only)"
-echo "  • Pinning means only local processes can access, not the LAN"
-echo "  • NPM proxies to Kong HTTP (${KONG_HTTP_PORT}) which remains LAN-accessible"
+echo
+info "Understanding network access:"
+echo "  • 'Localhost-only' (binding to 127.0.0.1): Service NOT on network, can't be reached from LAN"
+echo "  • 'Network-accessible' (binding to 0.0.0.0): Service IS on network, reachable from LAN"
+echo "  • 'Firewall blocking' (UFW): Service on network but firewall blocks connections"
+echo
+info "What we'll configure:"
+echo
+echo "  1. Database (5432):"
+echo "     → Always internal to Docker only (never on LAN or localhost)"
+echo
+echo "  2. Kong HTTPS (8443):"
+echo "     → Always localhost-only (NPM handles SSL, so direct HTTPS not needed)"
+echo
+echo "  3. Database Pooler (6543) - Supavisor for direct database connections:"
+echo "     → Need to connect DB tools (DBeaver, pgAdmin, etc.) from your workstation?"
+echo "     → NO (recommended): Makes it localhost-only, use 'docker exec' for DB tasks"
+echo "     → YES (advanced): Leaves it network-accessible, then use UFW to restrict IPs"
+echo
+echo "  4. Kong HTTP (${KONG_HTTP_PORT}) & Studio (${STUDIO_PORT}):"
+echo "     → Always network-accessible (NPM needs to reach them)"
+echo "     → Use UFW firewall (next step) to block everyone except NPM"
 echo
 
-ENABLE_ANALYTICS="$(ask_yn 'Enable Analytics (Logflare) - publishes port 4000 to LAN?' n)"
-PIN_HTTPS_LOOPBACK="$(ask_yn 'Pin Kong HTTPS (8443) to localhost only?' y)"
-PIN_POOLER_LOOPBACK="$(ask_yn 'Pin Supavisor Pooler (6543) to localhost only?' y)"
+ENABLE_ANALYTICS="$(ask_yn 'Enable Analytics (Logflare) - makes port 4000 network-accessible?' n)"
+echo
+POOLER_ACCESSIBLE="$(ask_yn 'Allow database pooler (6543) from LAN for DB tools?' n)"
+if [[ "$POOLER_ACCESSIBLE" = n ]]; then
+  PIN_POOLER_LOOPBACK=y
+  info "Pooler: localhost-only (not reachable from network)"
+else
+  PIN_POOLER_LOOPBACK=n
+  warn "Pooler: network-accessible (configure UFW in next step!)"
+fi
+# Kong HTTPS always localhost-only (no option)
+PIN_HTTPS_LOOPBACK=y
 
-bold "5. Firewall Configuration (Optional)"
-info "Restrict Kong/Studio ports to only allow NPM access:"
-echo "  • Uses UFW + Docker iptables rules"
-echo "  • Blocks direct access to Kong (${KONG_HTTP_PORT}) and Studio (${STUDIO_PORT}) from LAN"
-echo "  • Only allows NPM host IP to connect"
-echo "  • Also configures SSH access restrictions"
-echo "  • Recommended if VM is exposed to untrusted networks (default: NO for home LANs)"
+bold "5. Firewall Configuration (Optional but Recommended)"
+echo
+info "What firewall blocking does:"
+echo "  • Services are still network-accessible (bound to 0.0.0.0)"
+echo "  • Firewall sits in front and blocks unauthorized connections"
+echo "  • Like a bouncer: service is there, but most people can't get in"
+echo
+info "What we'll block with UFW:"
+echo "  • Kong HTTP (${KONG_HTTP_PORT}): Only NPM can connect"
+echo "  • Studio (${STUDIO_PORT}): Only NPM can connect"
+[[ "$PIN_POOLER_LOOPBACK" = n ]] && echo "  • Database Pooler (6543): Only specific IPs can connect (you'll set this)"
+echo "  • SSH (22): Only your admin subnet can connect"
+echo "  • Everything else: Allowed outbound, denied inbound"
+echo
+echo "Recommended for: Any network you don't fully control"
+echo "Skip if: Trusted home LAN with only family members"
 echo
 
 USE_UFW="$(ask_yn 'Configure UFW firewall rules?' n)"
 if [[ "$USE_UFW" = y ]]; then
   NPM_HOST_IP="$(ask 'Unraid NPM host IP (REQUIRED, e.g. 192.168.1.75)')"
   ADMIN_SSH_SRC="$(ask 'Admin IP/subnet for SSH' '192.168.1.0/24')"
+  if [[ "$PIN_POOLER_LOOPBACK" = n ]]; then
+    POOLER_ALLOWED_IPS="$(ask 'Database pooler allowed IPs/subnet (e.g. 192.168.1.0/24)' '192.168.1.0/24')"
+  fi
 fi
 
 # ============================================================
@@ -239,15 +276,29 @@ fi
 
 echo
 bold "=== Configuration Summary ==="
-echo "  Apex domain:  $APEX_FQDN"
-echo "  Kong API:     https://$API_DOMAIN  → VM:${KONG_HTTP_PORT} (HTTP)"
-echo "  Studio:       https://$STUDIO_DOMAIN → VM:${STUDIO_PORT} (HTTP)"
-echo "  Analytics:    $( [[ "$ENABLE_ANALYTICS" = y ]] && echo "ENABLED (port 4000)" || echo DISABLED )"
-echo "  Kong HTTPS:   $( [[ "$PIN_HTTPS_LOOPBACK" = y ]] && echo "127.0.0.1:8443 (localhost only)" || echo "0.0.0.0:8443 (LAN-exposed)" )"
-echo "  Pooler:       $( [[ "$PIN_POOLER_LOOPBACK" = y ]] && echo "127.0.0.1:6543 (localhost only)" || echo "0.0.0.0:6543 (LAN-exposed)" )"
-echo "  Database:     Internal only (never exposed)"
-echo "  Storage:      Unraid → VM mount at $VM_MOUNT ($STORAGE_PROTO)"
-[[ "$USE_UFW" = y ]] && echo "  Firewall:     NPM $NPM_HOST_IP allowed to ${KONG_HTTP_PORT}/${STUDIO_PORT}; SSH from $ADMIN_SSH_SRC"
+echo "  Apex domain:    $APEX_FQDN"
+echo "  Kong API:       https://$API_DOMAIN  → VM:${KONG_HTTP_PORT} (HTTP)"
+echo "  Studio:         https://$STUDIO_DOMAIN → VM:${STUDIO_PORT} (HTTP)"
+echo
+echo "  Network Access:"
+echo "    Kong HTTP:    Network-accessible (port ${KONG_HTTP_PORT})"
+echo "    Studio:       Network-accessible (port ${STUDIO_PORT})"
+echo "    Kong HTTPS:   Localhost-only (port 8443)"
+echo "    DB Pooler:    $( [[ "$PIN_POOLER_LOOPBACK" = y ]] && echo "Localhost-only (port 6543)" || echo "Network-accessible (port 6543)" )"
+echo "    Database:     Internal to Docker only (port 5432)"
+echo "    Analytics:    $( [[ "$ENABLE_ANALYTICS" = y ]] && echo "Network-accessible (port 4000)" || echo "Disabled" )"
+echo
+if [[ "$USE_UFW" = y ]]; then
+  echo "  Firewall (UFW):"
+  echo "    → NPM $NPM_HOST_IP can access Kong/Studio"
+  echo "    → SSH from $ADMIN_SSH_SRC"
+  [[ "$PIN_POOLER_LOOPBACK" = n ]] && echo "    → DB Pooler from $POOLER_ALLOWED_IPS"
+  echo "    → All other inbound: BLOCKED"
+else
+  echo "  Firewall:       Not configured (open LAN access)"
+fi
+echo
+echo "  Storage:        Unraid → VM mount at $VM_MOUNT ($STORAGE_PROTO)"
 echo
 [[ "$(ask_yn 'Proceed with setup?' y)" = y ]] || { err "Aborted."; exit 1; }
 
@@ -400,25 +451,50 @@ docker compose ps
 
 # Optional firewall
 if [[ "$USE_UFW" = y ]]; then
-  info "Configuring UFW + DOCKER-USER ..."
+  info "Configuring UFW + DOCKER-USER firewall rules..."
   apt install -y ufw iptables-persistent >/dev/null
   ufw --force reset
   ufw default deny incoming
   ufw default allow outgoing
+  
+  # SSH access from admin subnet
   ufw allow from "$ADMIN_SSH_SRC" to any port 22 proto tcp
+  
+  # Kong and Studio: only NPM can access
   ufw allow from "$NPM_HOST_IP" to any port "$KONG_HTTP_PORT" proto tcp
   ufw allow from "$NPM_HOST_IP" to any port "$STUDIO_PORT" proto tcp
+  
+  # Database pooler: only if network-accessible
+  if [[ "$PIN_POOLER_LOOPBACK" = n ]]; then
+    ufw allow from "$POOLER_ALLOWED_IPS" to any port 6543 proto tcp
+  fi
+  
   ufw --force enable
+  ok "UFW rules applied."
 
+  info "Configuring Docker-specific iptables rules..."
+  # Kong and Studio: allow NPM, drop all others
   iptables -I DOCKER-USER -s "$NPM_HOST_IP" -p tcp --dport "$KONG_HTTP_PORT" -j ACCEPT
   iptables -I DOCKER-USER -s "$NPM_HOST_IP" -p tcp --dport "$STUDIO_PORT" -j ACCEPT
   iptables -I DOCKER-USER -p tcp --dport "$KONG_HTTP_PORT" -j DROP
   iptables -I DOCKER-USER -p tcp --dport "$STUDIO_PORT" -j DROP
+  
+  # Always block Kong HTTPS (it's localhost-only anyway)
   iptables -I DOCKER-USER -p tcp --dport 8443 -j DROP
-  iptables -I DOCKER-USER -p tcp --dport 6543 -j DROP
+  
+  # Database pooler: allow if network-accessible, block otherwise
+  if [[ "$PIN_POOLER_LOOPBACK" = n ]]; then
+    iptables -I DOCKER-USER -s "$POOLER_ALLOWED_IPS" -p tcp --dport 6543 -j ACCEPT
+    iptables -I DOCKER-USER -p tcp --dport 6543 -j DROP
+  else
+    iptables -I DOCKER-USER -p tcp --dport 6543 -j DROP
+  fi
+  
+  # Block Analytics port (internal use only)
   iptables -I DOCKER-USER -p tcp --dport 4000 -j DROP
+  
   netfilter-persistent save >/dev/null
-  ok "Firewall rules applied."
+  ok "Docker firewall rules applied and saved."
 fi
 
 # Final notes
