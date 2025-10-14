@@ -26,23 +26,149 @@ log() {
 # Display functions
 clear_screen() { clear; }
 
-print_header() {
+animate_light_cycle_intro() {
+    clear
+    local width=88
+    local height=24
+    
+    # Build empty frame
+    local empty_frame="╔"
+    for ((i=0; i<width; i++)); do empty_frame+="═"; done
+    empty_frame+="╗\n"
+    for ((i=0; i<height; i++)); do
+        empty_frame+="║"
+        for ((j=0; j<width; j++)); do empty_frame+=" "; done
+        empty_frame+="║\n"
+    done
+    empty_frame+="╚"
+    for ((i=0; i<width; i++)); do empty_frame+="═"; done
+    empty_frame+="╝"
+    
+    # Animate light cycle racing around the border
     printf "${C_CYAN}"
+    
+    # Top edge - left to right (sample every 4th position for speed)
+    for ((i=0; i<=width; i+=4)); do
+        clear
+        printf "╔"
+        for ((j=0; j<i; j++)); do printf "═"; done
+        printf "${C_GREEN}▶${C_CYAN}"
+        for ((j=i; j<width; j++)); do printf "═"; done
+        printf "╗\n"
+        for ((k=0; k<height; k++)); do
+            printf "║"
+            for ((j=0; j<width; j++)); do printf " "; done
+            printf "║\n"
+        done
+        printf "╚"
+        for ((j=0; j<width; j++)); do printf "═"; done
+        printf "╝"
+        sleep 0.02
+    done
+    
+    # Right edge - top to bottom (sample a few positions)
+    for ((i=0; i<=height; i+=2)); do
+        clear
+        printf "╔"
+        for ((j=0; j<width; j++)); do printf "═"; done
+        printf "╗\n"
+        for ((k=0; k<height; k++)); do
+            printf "║"
+            for ((j=0; j<width; j++)); do 
+                if [[ $k -eq $i && $j -eq $((width-1)) ]]; then
+                    printf "${C_GREEN}▼${C_CYAN}"
+                else
+                    printf " "
+                fi
+            done
+            printf "║\n"
+        done
+        printf "╚"
+        for ((j=0; j<width; j++)); do printf "═"; done
+        printf "╝"
+        sleep 0.03
+    done
+    
+    # Bottom edge - right to left (sample every 4th position for speed)
+    for ((i=width; i>=0; i-=4)); do
+        clear
+        printf "╔"
+        for ((j=0; j<width; j++)); do printf "═"; done
+        printf "╗\n"
+        for ((k=0; k<height; k++)); do
+            printf "║"
+            for ((j=0; j<width; j++)); do printf " "; done
+            printf "║\n"
+        done
+        printf "╚"
+        for ((j=0; j<i; j++)); do printf "═"; done
+        printf "${C_GREEN}◀${C_CYAN}"
+        for ((j=i; j<width; j++)); do printf "═"; done
+        printf "╝"
+        sleep 0.02
+    done
+    
+    printf "${C_RESET}\n"
+    
+    # Reset terminal state to ensure prompts work properly
+    stty sane 2>/dev/null || true
+    sleep 0.2
+}
+
+print_header() {
+    clear
+    printf "${C_CYAN}"
+    
+    # Animated light cycle effect (faster)
+    local width=88
+    for i in {1..88}; do
+        printf "\r╔"
+        printf '═%.0s' $(seq 1 $i)
+        sleep 0.003
+    done
+    printf "╗\n"
+    
     cat << 'EOF'
-╔══════════════════════════════════════════════════════════════════════════════════╗
-║                                                                                  ║
-║        ██╗    ██╗ █████╗ ████████╗████████╗███████╗ ██████╗ ██╗   ██╗██████╗ ██████╗███████╗ ║
+║                                                                                      ║
+║                                                                                      ║
+║        ███████╗██╗   ██╗██████╗  █████╗ ██████╗  █████╗ ███████╗███████╗            ║
+║        ██╔════╝██║   ██║██╔══██╗██╔══██╗██╔══██╗██╔══██╗██╔════╝██╔════╝            ║
+║        ███████╗██║   ██║██████╔╝███████║██████╔╝███████║███████╗█████╗              ║
+║        ╚════██║██║   ██║██╔═══╝ ██╔══██║██╔══██╗██╔══██║╚════██║██╔══╝              ║
+║        ███████║╚██████╔╝██║     ██║  ██║██████╔╝██║  ██║███████║███████╗            ║
+║        ╚══════╝ ╚═════╝ ╚═╝     ╚═╝  ╚═╝╚═════╝ ╚═╝  ╚═╝╚══════╝╚══════╝            ║
+║                                                                                      ║
+║              ██╗   ██╗███╗   ██╗██████╗  █████╗ ██╗██████╗                          ║
+║              ██║   ██║████╗  ██║██╔══██╗██╔══██╗██║██╔══██╗                         ║
+║              ██║   ██║██╔██╗ ██║██████╔╝███████║██║██║  ██║                         ║
+║              ██║   ██║██║╚██╗██║██╔══██╗██╔══██║██║██║  ██║                         ║
+║              ╚██████╔╝██║ ╚████║██║  ██║██║  ██║██║██████╔╝                         ║
+║               ╚═════╝ ╚═╝  ╚═══╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝╚═════╝                          ║
+║                                                                                      ║
+║        ██╗    ██╗ █████╗ ████████╗████████╗███████╗ ██████╗ ██╗   ██╗██████╗  ██████╗███████╗ ║
 ║        ██║    ██║██╔══██╗╚══██╔══╝╚══██╔══╝██╔════╝██╔═══██╗██║   ██║██╔══██╗██╔════╝██╔════╝ ║
 ║        ██║ █╗ ██║███████║   ██║      ██║   █████╗  ██║   ██║██║   ██║██████╔╝██║     █████╗   ║
 ║        ██║███╗██║██╔══██║   ██║      ██║   ██╔══╝  ██║   ██║██║   ██║██╔══██╗██║     ██╔══╝   ║
 ║        ╚███╔███╔╝██║  ██║   ██║      ██║   ██║     ╚██████╔╝╚██████╔╝██║  ██║╚██████╗███████╗ ║
 ║         ╚══╝╚══╝ ╚═╝  ╚═╝   ╚═╝      ╚═╝   ╚═╝      ╚═════╝  ╚═════╝ ╚═╝  ╚═╝ ╚═════╝╚══════╝ ║
-║                                                                                  ║
-║                         Supabase Local Setup Configuration Wizard              ║
-║                                                                                  ║
-╚══════════════════════════════════════════════════════════════════════════════════╝
+║                                                                                      ║
+║                    [ LOCAL SUPABASE DEPLOYMENT CONFIGURATION WIZARD ]               ║
+║                                                                                      ║
 EOF
+    
+    # Animated bottom border (faster)
+    printf "╚"
+    for i in {1..88}; do
+        printf "═"
+        sleep 0.003
+    done
+    printf "╝\n"
+    
     printf "${C_RESET}\n"
+    
+    # Reset terminal state to ensure prompts work properly
+    stty sane 2>/dev/null || true
+    sleep 0.2
 }
 
 print_step_header() {
@@ -77,20 +203,22 @@ print_config_line() {
 
 ask() { 
     local p="$1" d="${2-}" v
-    printf "${C_MAGENTA}▶${C_RESET} ${C_WHITE}%s${C_RESET}" "$p"
-    [[ -n "$d" ]] && printf " ${C_CYAN}[%s]${C_RESET}" "$d"
-    printf ": "
-    read -r v
+    # Ensure output is flushed before reading
+    printf "${C_MAGENTA}▶${C_RESET} ${C_WHITE}%s${C_RESET}" "$p" >&2
+    [[ -n "$d" ]] && printf " ${C_CYAN}[%s]${C_RESET}" "$d" >&2
+    printf ": " >&2
+    read -r v </dev/tty
     echo "${v:-$d}"
 }
 
 ask_yn() {
     local p="$1" d="${2:-y}" a
     while true; do
-        printf "${C_MAGENTA}▶${C_RESET} ${C_WHITE}%s${C_RESET} ${C_CYAN}[" "$p"
-        [[ "$d" = "y" ]] && printf "Y/n" || printf "y/N"
-        printf "]${C_RESET}: "
-        read -r a || true
+        # Ensure output is flushed before reading
+        printf "${C_MAGENTA}▶${C_RESET} ${C_WHITE}%s${C_RESET} ${C_CYAN}[" "$p" >&2
+        [[ "$d" = "y" ]] && printf "Y/n" >&2 || printf "y/N" >&2
+        printf "]${C_RESET}: " >&2
+        read -r a </dev/tty || true
         a="${a:-$d}"
         case "$a" in
             y|Y) echo y; return;;
@@ -190,6 +318,12 @@ log "User: $(whoami)"
 log "Working Directory: $(pwd)"
 
 require_root
+
+# Show epic light cycle animation intro (set SKIP_ANIMATION=1 to disable)
+if [[ "${SKIP_ANIMATION:-0}" != "1" ]]; then
+    animate_light_cycle_intro
+fi
+
 clear_screen
 print_header
 
@@ -201,6 +335,10 @@ echo
 # STEP 1: Feature Selection
 print_step_header "1" "FEATURE SELECTION"
 echo
+
+# Ensure terminal is ready for interactive input
+stty sane 2>/dev/null || true
+
 ENABLE_ANALYTICS=$(ask_yn "Enable Analytics/Logs? (requires 2GB+ RAM)" "n")
 ENABLE_EMAIL=$(ask_yn "Enable Email Authentication?" "y")
 ENABLE_PHONE=$(ask_yn "Enable Phone Authentication?" "n")
@@ -594,20 +732,69 @@ fi
 # Completion
 log "=== Installation completed successfully ==="
 
-clear_screen
-print_header
+clear
 
-printf "${C_GREEN}"
+# Animated success banner
+printf "${C_CYAN}"
+printf "╔"
+for i in {1..88}; do
+    printf "═"
+    sleep 0.005
+done
+printf "╗\n"
+
 cat << 'EOF'
-╔══════════════════════════════════════════════════════════════════════════════════╗
-║                                                                                  ║
-║                        ████████████████████████████████████                      ║
-║                        █                                  █                      ║
-║                        █    DEPLOYMENT SUCCESSFUL         █                      ║
-║                        █                                  █                      ║
-║                        ████████████████████████████████████                      ║
-║                                                                                  ║
-╚══════════════════════════════════════════════════════════════════════════════════╝
+║                                                                                      ║
+║                                                                                      ║
+║                    ██████╗ ███████╗██████╗ ██╗      ██████╗ ██╗   ██╗               ║
+║                    ██╔══██╗██╔════╝██╔══██╗██║     ██╔═══██╗╚██╗ ██╔╝               ║
+║                    ██║  ██║█████╗  ██████╔╝██║     ██║   ██║ ╚████╔╝                ║
+║                    ██║  ██║██╔══╝  ██╔═══╝ ██║     ██║   ██║  ╚██╔╝                 ║
+║                    ██████╔╝███████╗██║     ███████╗╚██████╔╝   ██║                  ║
+║                    ╚═════╝ ╚══════╝╚═╝     ╚══════╝ ╚═════╝    ╚═╝                  ║
+║                                                                                      ║
+EOF
+
+printf "║                            "
+printf "${C_GREEN}"
+printf "███████╗██╗   ██╗ ██████╗ ██████╗███████╗███████╗███████╗"
+printf "${C_CYAN}"
+printf "                ║\n"
+
+printf "║                            "
+printf "${C_GREEN}"
+printf "██╔════╝██║   ██║██╔════╝██╔════╝██╔════╝██╔════╝██╔════╝"
+printf "${C_CYAN}"
+printf "                ║\n"
+
+printf "║                            "
+printf "${C_GREEN}"
+printf "███████╗██║   ██║██║     ██║     █████╗  ███████╗███████╗"
+printf "${C_CYAN}"
+printf "                ║\n"
+
+printf "║                            "
+printf "${C_GREEN}"
+printf "╚════██║██║   ██║██║     ██║     ██╔══╝  ╚════██║╚════██║"
+printf "${C_CYAN}"
+printf "                ║\n"
+
+printf "║                            "
+printf "${C_GREEN}"
+printf "███████║╚██████╔╝╚██████╗╚██████╗███████╗███████║███████║"
+printf "${C_CYAN}"
+printf "                ║\n"
+
+printf "║                            "
+printf "${C_GREEN}"
+printf "╚══════╝ ╚═════╝  ╚═════╝ ╚═════╝╚══════╝╚══════╝╚══════╝"
+printf "${C_CYAN}"
+printf "                ║\n"
+
+cat << 'EOF'
+║                                                                                      ║
+║                                                                                      ║
+╚══════════════════════════════════════════════════════════════════════════════════════╝
 EOF
 printf "${C_RESET}\n\n"
 
@@ -624,5 +811,7 @@ echo "  3) Test your API endpoint"
 echo "  4) Visit the Studio dashboard to create your first project"
 echo
 
-printf "${C_CYAN}Installation log: $LOGFILE${C_RESET}\n"
-printf "${C_GREEN}✓ WATTFOURCE Grid deployment complete!${C_RESET}\n\n"
+printf "${C_CYAN}Installation log: ${C_WHITE}$LOGFILE${C_RESET}\n"
+printf "${C_CYAN}════════════════════════════════════════════════════════════════════════════════════════${C_RESET}\n"
+printf "${C_GREEN}✓ SUPABASE ${C_CYAN}× ${C_BLUE}UNRAID ${C_CYAN}× ${C_MAGENTA}WATTFOURCE ${C_CYAN}Grid deployment complete!${C_RESET}\n"
+printf "${C_CYAN}════════════════════════════════════════════════════════════════════════════════════════${C_RESET}\n\n"

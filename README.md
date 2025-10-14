@@ -46,16 +46,22 @@ An awesome retro/cyberpunk-styled interactive installer for deploying Supabase o
    - Create a `supabase-storage` share on your Unraid array
    - Install Nginx Proxy Manager on Unraid host
 
-2. **Run the Installer**
+2. **Run the Installer (One-Liner)**
    ```bash
-   sudo -i
-   curl -fsSL https://your-repo/supabase-install.sh | bash
+   sudo bash -c 'apt update && apt -y upgrade && apt install -y wget curl && cd /tmp && wget --no-cache -O supabase-install.sh https://raw.githubusercontent.com/wattfource/automated-supbase-install-unraid/main/supabase-install.sh && chmod +x supabase-install.sh && ./supabase-install.sh'
    ```
    
-   Or download and run:
+   **What this does:**
+   - ✅ Runs everything as root
+   - ✅ Updates and upgrades system packages
+   - ✅ Installs wget/curl if missing
+   - ✅ Downloads latest script (overwrites existing)
+   - ✅ Makes executable and runs immediately
+   
+   Or download and run manually:
    ```bash
    sudo -i
-   wget https://your-repo/supabase-install.sh
+   wget https://raw.githubusercontent.com/wattfource/automated-supbase-install-unraid/main/supabase-install.sh
    chmod +x supabase-install.sh
    ./supabase-install.sh
    ```
@@ -68,6 +74,12 @@ An awesome retro/cyberpunk-styled interactive installer for deploying Supabase o
    - Port configuration
    - Security options (port pinning & firewall)
    - Storage mount (NFS or SMB)
+   
+   **Troubleshooting: If prompts don't appear**
+   ```bash
+   # Skip the intro animation for faster/more reliable startup:
+   SKIP_ANIMATION=1 ./supabase-install.sh
+   ```
 
 4. **Configure Nginx Proxy Manager**
    After installation, create two proxy hosts:
@@ -76,14 +88,21 @@ An awesome retro/cyberpunk-styled interactive installer for deploying Supabase o
 
 ### Visual Style
 
-The installer features a stunning WATTFOURCE-style interface with:
+The installer features a stunning **TRON-inspired** WATTFOURCE interface with:
 
-- **Cyan** (`#00FFFF`) - Primary information and headers
+#### Color Scheme
+- **Cyan** (`#00FFFF`) - Primary borders, grid lines, and headers
 - **Blue** (`#0066FF`) - Section headers and important data  
-- **Green** (`#00FF00`) - Success messages and completion
+- **Green** (`#00FF00`) - Success messages, completion, and light cycle animation
 - **Yellow** (`#FFFF00`) - Warnings and important notices
 - **Red** (`#FF0000`) - Errors and critical issues
-- **Magenta** (`#FF00FF`) - Special status messages
+- **Magenta** (`#FF00FF`) - Interactive prompts
+
+#### ASCII Art Features
+- **Animated Light Cycles**: Classic TRON-style light cycle races around the border on startup
+- **Three Brand Names**: SUPABASE, UNRAID, and WATTFOURCE displayed in custom ASCII art
+- **Smooth Animations**: Border-drawing animations with racing effects
+- **Clean Alignment**: Perfectly aligned 88-character wide ASCII boxes
 
 ### Security Features
 
