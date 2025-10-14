@@ -1,318 +1,157 @@
-# Supabase Self-Host Installer for Unraid 7
+# Supabase Self-Host Setup for Unraid
 
-**Official Supabase on Debian 13 VM with Unraid cache/array storage split**
+## WATTFOURCE Grid Architecture
 
-- ⚡ VM + database on cache (fast SSD)
-- 🛡️ User files on array (slow but parity-protected)
-- 🔒 NPM for SSL, firewall options
-- 🎯 Only for: Unraid 7, Debian 13, NPM on host
+An awesome retro/cyberpunk-styled interactive installer for deploying Supabase on Unraid infrastructure.
+
+### Features
+
+- 🎨 **WATTFOURCE-style ASCII art** with cyan/blue/magenta color scheme
+- 📊 **Progress indicators** with animated bars showing deployment status
+- 🔒 **Security-focused** with port pinning and firewall hardening options
+- 📝 **Descriptive paragraphs** explaining each configuration option
+- 🎯 **Interactive prompts** with clear consequences and recommendations
+- 💾 **Unraid storage integration** via NFS or SMB
+- 🐳 **Docker-based deployment** with automatic container orchestration
+
+### Architecture
 
 ```
-┌──────────────────────────────────────────┐
-│ UNRAID 7 (single IP)                     │
-│                                          │
-│  [Cache/SSD]        [Array/HDD+Parity]   │
-│   Debian VM ◄─NFS/SMB─► storage/         │
-│   (host net)              [domain]/      │
-│       │                                   │
-│   [NPM Docker]                           │
-│    localhost:8000/3000                   │
-└──────────────────────────────────────────┘
+╔══════════════════════════════════════════════════════════════════════════════════╗
+║                         WATTFOURCE GRID ARCHITECTURE                             ║
+║                                                                                  ║
+║  ████████████████████████████████████████████████████████████████████████████    ║
+║  █ UNRAID HOST (GRID NODE)                                    █                  ║
+║  █ ┌─────────────────┐  ┌─────────────────────────────────┐  █                  ║
+║  █ │   CACHE (SSD)   │  │        ARRAY (HDD)              │  █                  ║
+║  █ │ ┌─────────────┐ │  │ ┌─────────────────────────────┐ │  █                  ║
+║  █ │ │ DEBIAN VM   │ │  │ │ SUPABASE STORAGE            │ │  █                  ║
+║  █ │ │ (FAST)      │ │  │ │ (REDUNDANT)                 │ │  █                  ║
+║  █ │ └─────────────┘ │  │ └─────────────────────────────┘ │  █                  ║
+║  █ └─────────────────┘  └─────────────────────────────────┘  █                  ║
+║  ████████████████████████████████████████████████████████████████████████████    ║
+║                                                                                  ║
+║  NETWORK FLOW:                                                                   ║
+║  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐                          ║
+║  │   CLIENT    │───▶│     NPM     │───▶│     VM      │                          ║
+║  │             │    │ (SSL TERM)  │    │ (KONG:8000) │                          ║
+║  └─────────────┘    └─────────────┘    └─────────────┘                          ║
+╚══════════════════════════════════════════════════════════════════════════════════╝
 ```
+
+### Installation
+
+1. **Prepare Your Unraid Server**
+   - Create a Debian 13 VM on Unraid cache
+   - Create a `supabase-storage` share on your Unraid array
+   - Install Nginx Proxy Manager on Unraid host
+
+2. **Run the Installer**
+   ```bash
+   sudo -i
+   curl -fsSL https://your-repo/supabase-install.sh | bash
+   ```
+   
+   Or download and run:
+   ```bash
+   sudo -i
+   wget https://your-repo/supabase-install.sh
+   chmod +x supabase-install.sh
+   ./supabase-install.sh
+   ```
+
+3. **Follow the Interactive Prompts**
+   The script will guide you through:
+   - Docker installation (if needed)
+   - Domain configuration (API & Studio)
+   - SMTP email setup (optional)
+   - Port configuration
+   - Security options (port pinning & firewall)
+   - Storage mount (NFS or SMB)
+
+4. **Configure Nginx Proxy Manager**
+   After installation, create two proxy hosts:
+   - `api.yourdomain.com` → `http://VM-IP:8000` (Enable WebSockets)
+   - `studio.yourdomain.com` → `http://VM-IP:3000` (Add access restrictions)
+
+### Visual Style
+
+The installer features a stunning WATTFOURCE-style interface with:
+
+- **Cyan** (`#00FFFF`) - Primary information and headers
+- **Blue** (`#0066FF`) - Section headers and important data  
+- **Green** (`#00FF00`) - Success messages and completion
+- **Yellow** (`#FFFF00`) - Warnings and important notices
+- **Red** (`#FF0000`) - Errors and critical issues
+- **Magenta** (`#FF00FF`) - Special status messages
+
+### Security Features
+
+- **Port Pinning**: Sensitive services (HTTPS 8443, DB ports 5432/6543) pinned to localhost
+- **Firewall Hardening**: UFW + DOCKER-USER rules restrict access to NPM host only
+- **Minimal Exposure**: Only Kong:8000 (API) and Studio:3000 (Dashboard) exposed to LAN
+- **SSL Termination**: Handled by Nginx Proxy Manager, not by Supabase containers
+
+### Storage Strategy
+
+- **VM & Containers**: Run on Unraid cache (SSD/NVMe) for speed
+- **Supabase Storage**: Mounted from Unraid array (HDD) for redundancy
+- **Mimics Supabase Cloud**: Fast compute, safe storage (like AWS S3)
+
+### Post-Installation
+
+1. **Verify Storage Mount**
+   ```bash
+   df -h | grep supabase-storage
+   docker compose exec storage ls -l /var/lib/storage
+   ```
+
+2. **Configure SMTP** (if skipped)
+   ```bash
+   cd /srv/supabase
+   nano .env
+   # Edit SMTP settings
+   docker compose up -d auth
+   ```
+
+3. **Setup Backups**
+   ```bash
+   cd /srv/supabase
+   mkdir -p backups
+   docker compose exec -T db pg_dump -U postgres -Fc -d postgres > "backups/$(date +%F_%H-%M).dump"
+   ```
+
+4. **Update Stack**
+   ```bash
+   cd /srv/supabase
+   docker compose pull && docker compose up -d
+   ```
+
+### Files & Locations
+
+- **Project Directory**: `/srv/supabase`
+- **Environment File**: `/srv/supabase/.env`
+- **Docker Compose**: `/srv/supabase/docker-compose.yml`
+- **Override Config**: `/srv/supabase/docker-compose.override.yml`
+- **Storage Mount**: `/mnt/unraid/supabase-storage/<APEX_DOMAIN>`
+- **Backup Files**: `/srv/supabase/.env.bak.*`
+
+### Requirements
+
+- Debian 13 (or compatible Linux distribution)
+- Root access
+- Internet connectivity
+- Unraid server with NFS or SMB enabled
+- Domain names pointing to your Unraid server
+
+### Support
+
+This is a community-maintained installer. For Supabase issues, visit: https://supabase.com/docs
+
+### License
+
+MIT License - Feel free to modify and distribute
 
 ---
 
-## Quick Start
-
-### 1. Prerequisites (Do First)
-
-**On Unraid:**
-- Create share: `/mnt/user/supabase-storage/`
-- Enable NFS export or SMB with credentials
-- NPM container running
-- DNS: `api.yourdomain.com` → Unraid IP
-
-**Create VM:**
-- Debian 13 minimal, 2 vCPU, 4GB RAM, 20GB vdisk on cache
-- Network: Host mode (shares Unraid IP)
-- Install: SSH + standard utils only
-
-### 2. Run Installer
-
-**From inside the Debian VM (run each line separately):**
-
-```bash
-sudo -i
-```
-
-```bash
-apt update && apt -y upgrade
-```
-
-```bash
-cd /tmp
-```
-
-```bash
-wget https://raw.githubusercontent.com/wattfource/automated-supbase-install-unraid/main/supabase-install.sh
-```
-
-```bash
-chmod +x supabase-install.sh
-```
-
-```bash
-./supabase-install.sh
-```
-
-**Have ready before you start:**
-- Domain names (apex, api subdomain, studio subdomain)
-- Unraid IP/hostname
-- NFS or SMB (if SMB: username/password)
-- SMTP settings (optional, can skip)
-
-**During installation:**
-- Press Enter to accept defaults shown in `[brackets]`
-- Fields marked `(REQUIRED)` have no default
-
-### 3. After Install
-
-**Configure NPM (on Unraid):**
-
-Create two proxy hosts:
-- `api.yourdomain.com` → `http://localhost:8000` (enable websockets, SSL)
-- `studio.yourdomain.com` → `http://localhost:3000` (SSL + access restriction)
-
-**Get your keys:**
-```bash
-cat /srv/supabase/.env | grep -E '(ANON_KEY|SERVICE_ROLE_KEY)'
-```
-
-**Access:**
-- Studio: `https://studio.yourdomain.com`
-- API: `https://api.yourdomain.com`
-
----
-
-## Common Operations
-
-**View logs:**
-```bash
-cd /srv/supabase
-docker compose logs -f
-```
-
-**Restart services:**
-```bash
-docker compose restart
-```
-
-**Update Supabase:**
-```bash
-docker compose pull && docker compose up -d
-```
-
-**Backup database:**
-```bash
-cd /srv/supabase
-docker compose exec -T db pg_dump -U postgres -Fc -d postgres > backup-$(date +%F).dump
-```
-
-**Restore database:**
-```bash
-docker compose exec -T db pg_restore -U postgres -d postgres -c < backup-file.dump
-```
-
----
-
-## Detailed Setup Instructions
-
-<details>
-<summary><b>1. Create Unraid Storage Share</b></summary>
-
-In Unraid Web UI:
-1. **Shares** → **Add Share**
-2. Settings:
-   - Name: `supabase-storage`
-   - Use cache: `No` (force to array)
-   - Export: `Yes` (NFS) or Security: `Private` (SMB)
-
-From Unraid terminal:
-```bash
-mkdir -p /mnt/user/supabase-storage/yourdomain.com
-chmod 755 /mnt/user/supabase-storage/yourdomain.com
-```
-
-Verify NFS (if using):
-```bash
-showmount -e localhost
-```
-</details>
-
-<details>
-<summary><b>2. Create Debian 13 VM</b></summary>
-
-In Unraid VM Manager:
-- **VMs** → **Add VM** → **Linux**
-- Name: `debian-supabase`
-- CPUs: `2+`, RAM: `4096 MB+`
-- vDisk: `/mnt/cache/domains/debian-supabase/vdisk1.img`, 20GB+
-- **Network: Host mode** (important!)
-- Boot Debian 13 netinstall ISO
-
-During Debian install:
-- Minimal install, no desktop
-- Software: SSH + standard utils only
-- Partitioning: Use entire disk
-
-After install:
-```bash
-apt update && apt upgrade -y
-apt install -y sudo
-ping -c 3 google.com  # verify connectivity
-```
-</details>
-
-<details>
-<summary><b>3. Configure NPM & DNS</b></summary>
-
-**DNS (at your provider):**
-```
-api.yourdomain.com    → Unraid IP
-studio.yourdomain.com → Unraid IP
-```
-
-**NPM Proxy Hosts:**
-- API: `http://localhost:8000` (enable websockets, SSL)
-- Studio: `http://localhost:3000` (SSL, add access control)
-</details>
-
-<details>
-<summary><b>4. What the Installer Does</b></summary>
-
-Interactive prompts for:
-- Domain names (apex, Kong API, Studio) - defaults provided
-- Port numbers (Kong, Studio) - defaults: 8000, 3000
-- SMTP settings (optional - can skip)
-- Analytics enable/disable (default: no)
-- Network access (localhost-only vs network-accessible, explained in plain English)
-- Firewall rules (optional UFW, recommended)
-- Unraid storage (NFS/SMB) - NFS default, SMB requires credentials
-
-**Prompt format:**
-- `[value]` - Press Enter to accept default
-- `(REQUIRED)` - No default, must enter value
-- `[Y/n]` or `[N/y]` - Capital = default
-
-Automated actions:
-- Install Docker if missing
-- Generate secure secrets + JWT tokens
-- Fetch official Supabase docker setup
-- Mount Unraid storage at `/mnt/unraid/supabase-storage/[domain]`
-- Start all containers
-- Install location: `/srv/supabase`
-
-Time: 5-15 minutes
-</details>
-
-<details>
-<summary><b>5. Backup Strategy</b></summary>
-
-**Database (daily):**
-```bash
-cd /srv/supabase
-docker compose exec -T db pg_dump -U postgres -Fc > backup-$(date +%F).dump
-```
-
-**Environment file:**
-```bash
-cp /srv/supabase/.env ~/backup-env-$(date +%F).env
-```
-
-**Auto-backup script:**
-```bash
-cat > /root/backup-supabase.sh <<'EOF'
-#!/bin/bash
-cd /srv/supabase
-docker compose exec -T db pg_dump -U postgres -Fc > backups/db-$(date +%F).dump
-find backups/ -name "db-*.dump" -mtime +7 -delete
-EOF
-chmod +x /root/backup-supabase.sh
-(crontab -l; echo "0 2 * * * /root/backup-supabase.sh") | crontab -
-```
-
-**User files:** Already on array with parity protection
-</details>
-
-<details>
-<summary><b>6. Disaster Recovery</b></summary>
-
-If VM/cache fails:
-1. Create new Debian 13 VM
-2. Run installer with same domains
-3. Stop services: `docker compose down`
-4. Restore `.env` from backup
-5. Restore database: `docker compose up -d db && sleep 10 && docker compose exec -T db pg_restore -U postgres -d postgres -c < backup.dump`
-6. Start all: `docker compose up -d`
-
-User files survive on array (parity-protected)
-</details>
-
----
-
-## Troubleshooting
-
-| Problem | Solution |
-|---------|----------|
-| Can't access API/Studio | Check NPM forwards to localhost:8000/3000, verify `docker compose ps` |
-| Storage mount fails | Verify NFS export or SMB credentials, check `mount -a` |
-| Email not sending | Edit `/srv/supabase/.env` SMTP settings, restart `docker compose up -d auth` |
-| Port conflicts | Check `ss -tlnp \| grep -E ':(8000\|3000)'` |
-| Forgot keys | `cat /srv/supabase/.env \| grep KEY` |
-
----
-
-## Architecture Details
-
-**Storage split:**
-- VM/containers/database → cache (fast SSD, no redundancy)
-- User uploaded files → array (slow HDD, parity-protected)
-
-**Performance:**
-- API/DB queries: Fast (cache)
-- File uploads/downloads: Moderate (array over NFS/SMB)
-- Good for: Most apps, reasonable file sizes
-- Not for: Video streaming, real-time processing
-
-**Failure scenarios:**
-- Cache fails: VM lost, user files safe, rebuild VM + restore DB
-- Array disk fails: Unraid rebuilds via parity, zero downtime
-
-**Security concepts explained:**
-
-*Localhost-only (binding to 127.0.0.1):*
-- Service NOT on the network at all
-- Only processes on the same computer can connect
-- Can't be reached from LAN, even without firewall
-- Example: Kong HTTPS (8443) - NPM uses HTTP anyway
-
-*Network-accessible (binding to 0.0.0.0):*
-- Service IS on the network
-- Can be reached from LAN (if firewall allows)
-- Example: Kong HTTP (8000), Studio (3000)
-
-*Firewall blocking (UFW):*
-- Service is on network, but firewall blocks most connections
-- Like a bouncer at a club door
-- Example: Kong/Studio accessible only from NPM's IP
-
-**Locations:**
-```
-Unraid: /mnt/user/supabase-storage/[domain]/
-VM:     /mnt/unraid/supabase-storage/[domain]/  (mount)
-        /srv/supabase/                          (app files)
-```
-
----
-
-**Support:** [GitHub Issues](https://github.com/wattfource/automated-supbase-install-unraid/issues) | [Supabase Docs](https://supabase.com/docs/guides/self-hosting)
+**Welcome to the WATTFOURCE Grid. Your Supabase instance awaits deployment.**

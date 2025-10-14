@@ -15,7 +15,7 @@
 # ╚═╝╚═╝  ╚═══╝╚══════╝   ╚═╝   ╚═╝  ╚═╝╚══════╝╚══════╝╚═╝  ╚═══╝  ╚══════╝╚═╝  ╚═╝
 #                                                                                    
 # ╔══════════════════════════════════════════════════════════════════════════════════╗
-# ║                           TRON-GRID ARCHITECTURE                                 ║
+# ║                         WATTFOURCE GRID ARCHITECTURE                             ║
 # ║                                                                                  ║
 # ║  ████████████████████████████████████████████████████████████████████████████    ║
 # ║  █ UNRAID HOST (GRID NODE)                                    █                  ║
@@ -138,14 +138,14 @@ require_root
 clear
 tron_cyan "╔══════════════════════════════════════════════════════════════════════════════════╗"
 tron_cyan "║                                                                                  ║"
-tron_cyan "║                    ████████╗██████╗  ██████╗ ███╗   ██╗                          ║"
-tron_cyan "║                    ╚══██╔══╝██╔══██╗██╔═══██╗████╗  ██║                          ║"
-tron_cyan "║                       ██║   ██████╔╝██║   ██║██╔██╗ ██║                          ║"
-tron_cyan "║                       ██║   ██╔══██╗██║   ██║██║╚██╗██║                          ║"
-tron_cyan "║                       ██║   ██║  ██║╚██████╔╝██║ ╚████║                          ║"
-tron_cyan "║                       ╚═╝   ╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═══╝                          ║"
+tron_cyan "║             ██╗    ██╗ █████╗ ████████╗████████╗███████╗ ██████╗ ██╗   ██╗██████╗  ██████╗███████╗  ║"
+tron_cyan "║             ██║    ██║██╔══██╗╚══██╔══╝╚══██╔══╝██╔════╝██╔═══██╗██║   ██║██╔══██╗██╔════╝██╔════╝  ║"
+tron_cyan "║             ██║ █╗ ██║███████║   ██║      ██║   █████╗  ██║   ██║██║   ██║██████╔╝██║     █████╗    ║"
+tron_cyan "║             ██║███╗██║██╔══██║   ██║      ██║   ██╔══╝  ██║   ██║██║   ██║██╔══██╗██║     ██╔══╝    ║"
+tron_cyan "║             ╚███╔███╔╝██║  ██║   ██║      ██║   ██║     ╚██████╔╝╚██████╔╝██║  ██║╚██████╗███████╗  ║"
+tron_cyan "║              ╚══╝╚══╝ ╚═╝  ╚═╝   ╚═╝      ╚═╝   ╚═╝      ╚═════╝  ╚═════╝ ╚═╝  ╚═╝ ╚═════╝╚══════╝  ║"
 tron_cyan "║                                                                                  ║"
-tron_cyan "║                    GRID INITIALIZATION SEQUENCE                                 ║"
+tron_cyan "║                          GRID INITIALIZATION SEQUENCE                           ║"
 tron_cyan "║                    ████████████████████████████████████████████████████████      ║"
 tron_cyan "╚══════════════════════════════════════════════════════════════════════════════════╝"
 echo
@@ -160,10 +160,10 @@ command -v git  >/dev/null || apt install -y git
 ok "System dependencies verified"
 
 echo
-show_grid "GRID ARCHITECTURE ANALYSIS"
+show_grid "WATTFOURCE GRID ARCHITECTURE ANALYSIS"
 echo
 tron_white "╔══════════════════════════════════════════════════════════════════════════════════╗"
-tron_white "║                           MISSION BRIEFING                                      ║"
+tron_white "║                           DEPLOYMENT BRIEFING                                   ║"
 tron_white "╚══════════════════════════════════════════════════════════════════════════════════╝"
 echo
 tron_cyan "This installation will deploy a self-hosted Supabase instance optimized for Unraid architecture."
@@ -548,11 +548,6 @@ if [[ "$USE_UFW" = y ]]; then
   ufw allow from "$NPM_HOST_IP" to any port "$KONG_HTTP_PORT" proto tcp
   ufw allow from "$NPM_HOST_IP" to any port "$STUDIO_PORT" proto tcp
   
-  # Database pooler: only if network-accessible
-  if [[ "$PIN_POOLER_LOOPBACK" = n ]]; then
-    ufw allow from "$POOLER_ALLOWED_IPS" to any port 6543 proto tcp
-  fi
-  
   ufw --force enable
 
   iptables -I DOCKER-USER -s "$NPM_HOST_IP" -p tcp --dport 8000 -j ACCEPT
@@ -560,14 +555,7 @@ if [[ "$USE_UFW" = y ]]; then
   iptables -I DOCKER-USER -p tcp --dport 8000 -j DROP
   iptables -I DOCKER-USER -p tcp --dport 3000 -j DROP
   iptables -I DOCKER-USER -p tcp --dport 8443 -j DROP
-  
-  # Database pooler: allow if network-accessible, block otherwise
-  if [[ "$PIN_POOLER_LOOPBACK" = n ]]; then
-    iptables -I DOCKER-USER -s "$POOLER_ALLOWED_IPS" -p tcp --dport 6543 -j ACCEPT
-    iptables -I DOCKER-USER -p tcp --dport 6543 -j DROP
-  else
-    iptables -I DOCKER-USER -p tcp --dport 6543 -j DROP
-  fi
+  iptables -I DOCKER-USER -p tcp --dport 6543 -j DROP
   
   # Block Analytics port (internal use only)
   iptables -I DOCKER-USER -p tcp --dport 4000 -j DROP
