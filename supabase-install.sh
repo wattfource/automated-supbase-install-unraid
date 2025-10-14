@@ -260,8 +260,24 @@ exec_with_spinner() {
     local msg="$1"
     shift
     log "Executing: $*"
+    
+    # Run command in background, capture exit status properly
+    set +e  # Temporarily disable exit on error
     "$@" >> "$LOGFILE" 2>&1 &
-    show_spinner $! "$msg"
+    local bg_pid=$!
+    show_spinner $bg_pid "$msg"
+    local exit_code=$?
+    set -e  # Re-enable exit on error
+    
+    if [ $exit_code -ne 0 ]; then
+        print_error "Command failed with exit code $exit_code"
+        print_error "Check log file for details: $LOGFILE"
+        print_error "Last 10 lines of log:"
+        tail -n 10 "$LOGFILE" >&2 || true
+        return $exit_code
+    fi
+    
+    return 0
 }
 
 # Validation functions
@@ -434,13 +450,19 @@ if [[ "$ENABLE_STORAGE" = "y" ]]; then
     if [[ "$STORAGE_PROTO" = "nfs" ]]; then
         UNRAID_HOST=$(ask "Unraid server hostname or IP" "unraid.lan")
         UNRAID_EXPORT="/mnt/user/supabase-storage/${APEX_FQDN}"
-        exec_with_spinner "Installing NFS client..." apt install -y nfs-common
+        exec_with_spinner "Installing NFS client..." apt install -y nfs-common || {
+            print_error "Failed to install NFS client"
+            exit 1
+        }
     else
         UNRAID_HOST=$(ask "Unraid server hostname or IP" "unraid.lan")
         UNRAID_SHARE="supabase-storage"
         SMB_USER=$(ask "SMB username" "")
         SMB_PASS=$(ask "SMB password" "")
-        exec_with_spinner "Installing SMB client..." apt install -y cifs-utils
+        exec_with_spinner "Installing SMB client..." apt install -y cifs-utils || {
+            print_error "Failed to install SMB client"
+            exit 1
+        }
     fi
     VM_MOUNT="$STORAGE_MOUNT"
     log "Storage: proto=$STORAGE_PROTO host=$UNRAID_HOST mount=$VM_MOUNT"
@@ -515,47 +537,82 @@ print_header
 print_step_header "◉" "INSTALLING DEPENDENCIES"
 echo
 
+# Install basic tools first (needed for Docker installation)
+print_info "Installing prerequisite packages..."
+for cmd in curl gpg jq openssl git; do
+    if ! command -v $cmd >/dev/null; then
+        exec_with_spinner "Installing $cmd..." apt install -y $cmd || {
+            print_error "Failed to install $cmd"
+            exit 1
+        }
+    else
+        print_success "$cmd already installed"
+    fi
+done
+
+# Now install Docker (which requires curl and gpg)
 if ! command -v docker >/dev/null; then
-    exec_with_spinner "Installing Docker Engine..." bash -c '
-        install -m 0755 -d /etc/apt/keyrings
-        curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-        chmod a+r /etc/apt/keyrings/docker.gpg
-        . /etc/os-release
-        echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian $VERSION_CODENAME stable" > /etc/apt/sources.list.d/docker.list
-        apt update
-        apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-        systemctl enable --now docker
-    '
+    print_info "Installing Docker Engine..."
+    exec_with_spinner "Adding Docker repository..." bash -c '
+        set -euo pipefail
+        install -m 0755 -d /etc/apt/keyrings || exit 1
+        curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg || exit 1
+        chmod a+r /etc/apt/keyrings/docker.gpg || exit 1
+        . /etc/os-release || exit 1
+        echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian $VERSION_CODENAME stable" > /etc/apt/sources.list.d/docker.list || exit 1
+        apt update || exit 1
+    ' || {
+        print_error "Failed to add Docker repository. Please check your internet connection."
+        exit 1
+    }
+    
+    exec_with_spinner "Installing Docker packages..." bash -c '
+        set -euo pipefail
+        apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin || exit 1
+    ' || {
+        print_error "Docker installation failed."
+        print_error "You may need to install Docker manually: https://docs.docker.com/engine/install/debian/"
+        exit 1
+    }
+    
+    exec_with_spinner "Enabling Docker service..." systemctl enable --now docker || {
+        print_error "Failed to start Docker service"
+        exit 1
+    }
+    
+    print_success "Docker Engine installed successfully"
 else
     print_success "Docker already installed"
 fi
-
-for cmd in curl gpg jq openssl git; do
-    if ! command -v $cmd >/dev/null; then
-        exec_with_spinner "Installing $cmd..." apt install -y $cmd
-    else
-        print_success "$cmd installed"
-    fi
-done
 
 # Setup directory
 print_step_header "◉" "SETTING UP DIRECTORY"
 echo
 
 ROOT="/srv/supabase"
-exec_with_spinner "Creating deployment directory..." mkdir -p "$ROOT"
-cd "$ROOT"
+exec_with_spinner "Creating deployment directory..." mkdir -p "$ROOT" || {
+    print_error "Failed to create deployment directory"
+    exit 1
+}
+cd "$ROOT" || {
+    print_error "Failed to change to deployment directory"
+    exit 1
+}
 log "Changed directory to $ROOT"
 
 # Download Supabase
 if [[ ! -f docker-compose.yml ]]; then
     exec_with_spinner "Fetching Supabase docker bundle..." bash -c "
-        rm -rf /tmp/supabase
-        git clone --depth 1 https://github.com/supabase/supabase /tmp/supabase
-        cp -rf /tmp/supabase/docker/* /srv/supabase/
-        cp /tmp/supabase/docker/.env.example /srv/supabase/.env 2>/dev/null || touch /srv/supabase/.env
-        rm -rf /tmp/supabase
-    "
+        set -euo pipefail
+        rm -rf /tmp/supabase || exit 1
+        git clone --depth 1 https://github.com/supabase/supabase /tmp/supabase || exit 1
+        cp -rf /tmp/supabase/docker/* /srv/supabase/ || exit 1
+        cp /tmp/supabase/docker/.env.example /srv/supabase/.env 2>/dev/null || touch /srv/supabase/.env || exit 1
+        rm -rf /tmp/supabase || exit 1
+    " || {
+        print_error "Failed to download Supabase bundle. Please check your internet connection."
+        exit 1
+    }
 else
     print_success "Supabase bundle already exists"
 fi
@@ -627,12 +684,18 @@ if [[ "$ENABLE_STORAGE" = "y" ]]; then
     print_step_header "◉" "MOUNTING STORAGE"
     echo
     
-    exec_with_spinner "Creating mount point..." mkdir -p "$VM_MOUNT"
+    exec_with_spinner "Creating mount point..." mkdir -p "$VM_MOUNT" || {
+        print_error "Failed to create mount point"
+        exit 1
+    }
     
     if [[ "$STORAGE_PROTO" = "nfs" ]]; then
         grep -qE "[[:space:]]$VM_MOUNT[[:space:]]" /etc/fstab || \
             echo "${UNRAID_HOST}:${UNRAID_EXPORT}  ${VM_MOUNT}  nfs  defaults  0  0" >> /etc/fstab
-        exec_with_spinner "Mounting NFS share..." mount -a
+        exec_with_spinner "Mounting NFS share..." mount -a || {
+            print_error "Failed to mount NFS share. Check that NFS export exists on Unraid."
+            exit 1
+        }
     else
         CREDF="/root/.smb-${APEX_FQDN}.cred"
         {
@@ -642,7 +705,10 @@ if [[ "$ENABLE_STORAGE" = "y" ]]; then
         chmod 600 "$CREDF"
         grep -qE "[[:space:]]$VM_MOUNT[[:space:]]" /etc/fstab || \
             echo "//${UNRAID_HOST}/${UNRAID_SHARE}  ${VM_MOUNT}  cifs  credentials=${CREDF},iocharset=utf8  0  0" >> /etc/fstab
-        exec_with_spinner "Mounting SMB share..." mount -a
+        exec_with_spinner "Mounting SMB share..." mount -a || {
+            print_error "Failed to mount SMB share. Check credentials and share name."
+            exit 1
+        }
     fi
     log "Storage mounted at $VM_MOUNT"
 fi
@@ -695,8 +761,15 @@ print_success "Override configured"
 print_step_header "◉" "DEPLOYING CONTAINERS"
 echo
 
-exec_with_spinner "Pulling container images (this may take a while)..." docker compose pull
-exec_with_spinner "Starting Supabase services..." docker compose up -d
+exec_with_spinner "Pulling container images (this may take a while)..." docker compose pull || {
+    print_error "Failed to pull Docker images. Please check your internet connection and Docker installation."
+    exit 1
+}
+
+exec_with_spinner "Starting Supabase services..." docker compose up -d || {
+    print_error "Failed to start Supabase services. Check Docker logs with: docker compose logs"
+    exit 1
+}
 
 log "Containers deployed"
 
@@ -705,7 +778,10 @@ if [[ "$USE_UFW" = "y" ]]; then
     print_step_header "◉" "CONFIGURING FIREWALL"
     echo
     
-    exec_with_spinner "Installing UFW..." apt install -y ufw iptables-persistent
+    exec_with_spinner "Installing UFW..." apt install -y ufw iptables-persistent || {
+        print_error "Failed to install UFW"
+        exit 1
+    }
     
     print_info "Configuring firewall rules..."
     ufw --force reset >> "$LOGFILE" 2>&1
