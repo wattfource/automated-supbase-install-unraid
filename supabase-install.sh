@@ -335,6 +335,59 @@ log "Working Directory: $(pwd)"
 
 require_root
 
+# Clean up broken configurations from previous failed installations
+cleanup_previous_attempts() {
+    local cleaned=0
+    
+    # Check for broken Docker repository (repository exists but GPG key doesn't)
+    if [[ -f /etc/apt/sources.list.d/docker.list ]] && [[ ! -f /etc/apt/keyrings/docker.gpg ]]; then
+        log "Detected broken Docker repository configuration from previous attempt"
+        print_warning "Cleaning up broken Docker repository configuration..."
+        rm -f /etc/apt/sources.list.d/docker.list 2>/dev/null || true
+        cleaned=1
+    fi
+    
+    # Check for orphaned Docker keyring directory
+    if [[ -d /etc/apt/keyrings ]] && [[ ! -f /etc/apt/keyrings/docker.gpg ]]; then
+        # Remove only if it's empty or contains broken Docker keys
+        if [[ -z "$(ls -A /etc/apt/keyrings 2>/dev/null)" ]]; then
+            rmdir /etc/apt/keyrings 2>/dev/null || true
+        fi
+    fi
+    
+    # Clean up any partial Supabase installations
+    if [[ -d "/srv/supabase" ]] && [[ ! -f "/srv/supabase/docker-compose.yml" ]]; then
+        log "Detected incomplete Supabase installation directory"
+        print_warning "Cleaning up incomplete Supabase installation..."
+        rm -rf /srv/supabase 2>/dev/null || true
+        cleaned=1
+    fi
+    
+    # Clean up any orphaned Docker containers from previous attempts
+    if command -v docker >/dev/null 2>&1; then
+        local orphaned_containers=$(docker ps -a --filter "name=supabase" --format "{{.Names}}" 2>/dev/null || true)
+        if [[ -n "$orphaned_containers" ]]; then
+            log "Found orphaned Supabase containers from previous attempts"
+            print_warning "Cleaning up orphaned Docker containers..."
+            docker stop $(echo "$orphaned_containers") 2>/dev/null || true
+            docker rm $(echo "$orphaned_containers") 2>/dev/null || true
+            cleaned=1
+        fi
+    fi
+    
+    # If we cleaned anything, update apt cache
+    if [[ $cleaned -eq 1 ]]; then
+        log "Running apt update to refresh package lists..."
+        apt update >> "$LOGFILE" 2>&1 || {
+            log "Warning: apt update failed, but continuing anyway"
+        }
+        print_success "Cleanup complete"
+    fi
+}
+
+# Clean up any broken configurations from previous failed installations
+cleanup_previous_attempts
+
 # Show epic light cycle animation intro (set SKIP_ANIMATION=1 to disable)
 if [[ "${SKIP_ANIMATION:-0}" != "1" ]]; then
     animate_light_cycle_intro

@@ -80,6 +80,14 @@ An awesome retro/cyberpunk-styled interactive installer for deploying Supabase o
    # Skip the intro animation for faster/more reliable startup:
    SKIP_ANIMATION=1 ./supabase-install.sh
    ```
+   
+   **Troubleshooting: If you get Docker repository errors after a failed install**
+   ```bash
+   # Manual cleanup (the script now does this automatically):
+   sudo rm -f /etc/apt/sources.list.d/docker.list /etc/apt/keyrings/docker.gpg
+   sudo apt update
+   # Then run the installer again
+   ```
 
 4. **Configure Nginx Proxy Manager**
    After installation, create two proxy hosts:
