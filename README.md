@@ -48,10 +48,11 @@ An awesome retro/cyberpunk-styled interactive installer for deploying Supabase o
 
 2. **Run the Installer (One-Liner)**
    ```bash
-   sudo bash -c 'apt update && apt -y upgrade && apt install -y wget curl gpg && cd /tmp && wget --no-cache -O supabase-install.sh https://raw.githubusercontent.com/wattfource/automated-supbase-install-unraid/main/supabase-install.sh && chmod +x supabase-install.sh && ./supabase-install.sh'
+   sudo bash -c 'rm -f /etc/apt/sources.list.d/docker.list /etc/apt/keyrings/docker.gpg 2>/dev/null; apt update && apt -y upgrade && apt install -y wget curl gpg && cd /tmp && wget --no-cache -O supabase-install.sh https://raw.githubusercontent.com/wattfource/automated-supbase-install-unraid/main/supabase-install.sh && chmod +x supabase-install.sh && ./supabase-install.sh'
    ```
    
    **What this does:**
+   - ✅ Cleans up any broken Docker repository configurations first
    - ✅ Runs everything as root
    - ✅ Updates and upgrades system packages
    - ✅ Installs wget, curl, and gpg (required for Docker installation)
