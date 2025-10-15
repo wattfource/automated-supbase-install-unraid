@@ -1,20 +1,18 @@
-# Supabase Self-Host Setup for Unraid
+# Supabase Self-Host Installer for Unraid
 
-## WATTFOURCE Grid Architecture
+Automated installer for deploying Supabase on Unraid infrastructure with a Debian 13 VM.
 
-An awesome retro/cyberpunk-styled interactive installer for deploying Supabase on Unraid infrastructure.
+## What This Does
 
-### Features
+Installs and configures the official Supabase self-hosted stack with:
+- Automated dependency installation (Docker, tools)
+- Interactive configuration with sensible defaults
+- Storage integration with Unraid array (NFS or SMB)
+- Optional UFW firewall hardening
+- Port security (localhost-only binding for sensitive services)
+- SSL termination via Nginx Proxy Manager
 
-- 🎨 **WATTFOURCE-style ASCII art** with cyan/blue/magenta color scheme
-- 📊 **Progress indicators** with animated bars showing deployment status
-- 🔒 **Security-focused** with port pinning and firewall hardening options
-- 📝 **Descriptive paragraphs** explaining each configuration option
-- 🎯 **Interactive prompts** with clear consequences and recommendations
-- 💾 **Unraid storage integration** via NFS or SMB
-- 🐳 **Docker-based deployment** with automatic container orchestration
-
-### Architecture
+## Architecture
 
 ```
 ╔══════════════════════════════════════════════════════════════════════════════════╗
@@ -39,7 +37,12 @@ An awesome retro/cyberpunk-styled interactive installer for deploying Supabase o
 ╚══════════════════════════════════════════════════════════════════════════════════╝
 ```
 
-### Installation
+**Storage Strategy:**
+- VM/containers/database run on Unraid cache (fast SSD/NVMe)
+- User uploaded files stored on Unraid array (slower but parity-protected)
+- Mimics Supabase Cloud architecture (compute fast, storage safe)
+
+## Installation
 
 1. **Prepare Your Unraid Server**
    - Create a Debian 13 VM on Unraid cache
@@ -92,41 +95,10 @@ An awesome retro/cyberpunk-styled interactive installer for deploying Supabase o
 
 4. **Configure Nginx Proxy Manager**
    After installation, create two proxy hosts:
-   - `api.yourdomain.com` → `http://VM-IP:8000` (Enable WebSockets)
-   - `studio.yourdomain.com` → `http://VM-IP:3000` (Add access restrictions)
+   - `api.yourdomain.com` → `http://localhost:8000` (Enable WebSockets)
+   - `studio.yourdomain.com` → `http://localhost:3000` (Add access restrictions)
 
-### Visual Style
-
-The installer features a stunning **TRON-inspired** WATTFOURCE interface with:
-
-#### Color Scheme
-- **Cyan** (`#00FFFF`) - Primary borders, grid lines, and headers
-- **Blue** (`#0066FF`) - Section headers and important data  
-- **Green** (`#00FF00`) - Success messages, completion, and light cycle animation
-- **Yellow** (`#FFFF00`) - Warnings and important notices
-- **Red** (`#FF0000`) - Errors and critical issues
-- **Magenta** (`#FF00FF`) - Interactive prompts
-
-#### ASCII Art Features
-- **Animated Light Cycles**: Classic TRON-style light cycle races around the border on startup
-- **Three Brand Names**: SUPABASE, UNRAID, and WATTFOURCE displayed in custom ASCII art
-- **Smooth Animations**: Border-drawing animations with racing effects
-- **Clean Alignment**: Perfectly aligned 88-character wide ASCII boxes
-
-### Security Features
-
-- **Port Pinning**: Sensitive services (HTTPS 8443, DB ports 5432/6543) pinned to localhost
-- **Firewall Hardening**: UFW + DOCKER-USER rules restrict access to NPM host only
-- **Minimal Exposure**: Only Kong:8000 (API) and Studio:3000 (Dashboard) exposed to LAN
-- **SSL Termination**: Handled by Nginx Proxy Manager, not by Supabase containers
-
-### Storage Strategy
-
-- **VM & Containers**: Run on Unraid cache (SSD/NVMe) for speed
-- **Supabase Storage**: Mounted from Unraid array (HDD) for redundancy
-- **Mimics Supabase Cloud**: Fast compute, safe storage (like AWS S3)
-
-### Post-Installation
+## Post-Installation
 
 1. **Verify Storage Mount**
    ```bash
@@ -155,7 +127,7 @@ The installer features a stunning **TRON-inspired** WATTFOURCE interface with:
    docker compose pull && docker compose up -d
    ```
 
-### Files & Locations
+## Files & Locations
 
 - **Project Directory**: `/srv/supabase`
 - **Environment File**: `/srv/supabase/.env`
@@ -164,7 +136,7 @@ The installer features a stunning **TRON-inspired** WATTFOURCE interface with:
 - **Storage Mount**: `/mnt/unraid/supabase-storage/<APEX_DOMAIN>`
 - **Backup Files**: `/srv/supabase/.env.bak.*`
 
-### Requirements
+## Requirements
 
 - Debian 13 (or compatible Linux distribution)
 - Root access
@@ -172,14 +144,10 @@ The installer features a stunning **TRON-inspired** WATTFOURCE interface with:
 - Unraid server with NFS or SMB enabled
 - Domain names pointing to your Unraid server
 
-### Support
+## Support
 
 This is a community-maintained installer. For Supabase issues, visit: https://supabase.com/docs
 
-### License
+## License
 
 MIT License - Feel free to modify and distribute
-
----
-
-**Welcome to the WATTFOURCE Grid. Your Supabase instance awaits deployment.**
