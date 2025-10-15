@@ -539,6 +539,7 @@ fi
 print_step_header "◉" "GENERATING JWT KEYS"
 echo
 
+JWT_SECRET_ENV="$JWT_SECRET"
 export JWT_SECRET
 ANON_KEY="$(gen_jwt_for_role anon)"
 SERVICE_ROLE_KEY="$(gen_jwt_for_role service_role)"
@@ -560,7 +561,7 @@ upsert_env ADDITIONAL_REDIRECT_URLS "$ADDITIONAL_REDIRECT"
 
 # Secrets
 upsert_env POSTGRES_PASSWORD "$POSTGRES_PASSWORD"
-upsert_env JWT_SECRET "$JWT_SECRET"
+upsert_env JWT_SECRET "$JWT_SECRET_ENV"
 upsert_env ANON_KEY "$ANON_KEY"
 upsert_env SERVICE_ROLE_KEY "$SERVICE_ROLE_KEY"
 upsert_env PG_META_CRYPTO_KEY "$PG_META_CRYPTO_KEY"
