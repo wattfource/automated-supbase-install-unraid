@@ -271,9 +271,9 @@ ENABLE_ANALYTICS=$(ask_yn "Enable Analytics/Logs? (requires 2GB+ RAM)" "n")
 ENABLE_EMAIL=$(ask_yn "Enable Email Authentication?" "y")
 ENABLE_PHONE=$(ask_yn "Enable Phone Authentication?" "n")
 ENABLE_ANONYMOUS=$(ask_yn "Enable Anonymous Users?" "n")
-ENABLE_STORAGE=$(ask_yn "Enable Storage (file uploads)?" "n")
+ENABLE_STORAGE=$(ask_yn "Enable Storage (file uploads)?" "y")
 ENABLE_REALTIME=$(ask_yn "Enable Realtime?" "y")
-ENABLE_EDGE=$(ask_yn "Enable Edge Functions?" "n")
+ENABLE_EDGE=$(ask_yn "Enable Edge Functions?" "y")
 
 log "Feature selection: Analytics=$ENABLE_ANALYTICS Email=$ENABLE_EMAIL Phone=$ENABLE_PHONE Anonymous=$ENABLE_ANONYMOUS Storage=$ENABLE_STORAGE Realtime=$ENABLE_REALTIME Edge=$ENABLE_EDGE"
 
@@ -294,9 +294,9 @@ print_step_header "3" "DATABASE CONFIG"
 echo
 POSTGRES_HOST=$(ask "PostgreSQL Host" "db")
 POSTGRES_DB=$(ask "PostgreSQL Database" "postgres")
-POSTGRES_PORT=$(ask "PostgreSQL Port" "5432")
+# POSTGRES_PORT is handled internally by Docker Compose (always 5432 inside the network)
 
-log "Database: host=$POSTGRES_HOST db=$POSTGRES_DB port=$POSTGRES_PORT"
+log "Database: host=$POSTGRES_HOST db=$POSTGRES_DB"
 
 # STEP 4: API Gateway Config
 print_step_header "4" "API GATEWAY CONFIG"
@@ -320,8 +320,8 @@ while :; do
     fi
 done
 
-SITE_URL=$(ask "Frontend URL (SITE_URL)" "http://${LOCAL_IP}:3000")
-API_URL=$(ask "Supabase API URL (API_EXTERNAL_URL)" "http://${LOCAL_IP}:8000")
+SITE_URL=$(ask "Frontend URL (SITE_URL)" "https://studio.${APEX_FQDN}")
+API_URL=$(ask "Supabase API URL (API_EXTERNAL_URL)" "https://api.${APEX_FQDN}")
 ADDITIONAL_REDIRECT=$(ask "Additional redirect URLs (comma-separated, optional)" "")
 
 log "URLs: apex=$APEX_FQDN site=$SITE_URL api=$API_URL"
@@ -331,7 +331,7 @@ print_step_header "6" "EMAIL AUTH CONFIG"
 echo
 
 if [[ "$ENABLE_EMAIL" = "y" ]]; then
-    EMAIL_AUTOCONFIRM=$(ask_yn "Auto-confirm email signups? (dev only)" "y")
+    EMAIL_AUTOCONFIRM=$(ask_yn "Auto-confirm email signups? (dev only)" "n")
     ENABLE_SIGNUP=$(ask_yn "Use Resend for email delivery?" "y")
     
     if [[ "$ENABLE_SIGNUP" = "y" ]]; then
@@ -356,19 +356,25 @@ if [[ "$ENABLE_STORAGE" = "y" ]]; then
     print_step_header "7" "STORAGE CONFIG"
     echo
     
-    STORAGE_MOUNT=$(ask "Unraid storage mount path" "/mnt/unraid/supabase-storage/${APEX_FQDN}")
+    print_info "Storage architecture: Unraid share → VM mount point → Docker container"
+    echo
+    
     STORAGE_PROTO=$(ask "Storage protocol (nfs|smb)" "nfs")
     
     if [[ "$STORAGE_PROTO" = "nfs" ]]; then
         UNRAID_HOST=$(ask "Unraid server hostname or IP" "unraid.lan")
-        UNRAID_EXPORT="/mnt/user/supabase-storage/${APEX_FQDN}"
+        UNRAID_EXPORT=$(ask "Unraid NFS export path" "/mnt/user/supabase-storage/${APEX_FQDN}")
+        STORAGE_MOUNT=$(ask "VM mount point" "/mnt/unraid/supabase-storage/${APEX_FQDN}")
         exec_with_spinner "Installing NFS client..." apt install -y nfs-common || {
             print_error "Failed to install NFS client"
             exit 1
         }
     else
         UNRAID_HOST=$(ask "Unraid server hostname or IP" "unraid.lan")
-        UNRAID_SHARE="supabase-storage"
+        UNRAID_SHARE=$(ask "Unraid SMB share name" "supabase-storage")
+        # SMB mounts the entire share, then Docker uses a subfolder within it
+        SMB_MOUNT_BASE="/mnt/unraid"
+        STORAGE_MOUNT="${SMB_MOUNT_BASE}/${UNRAID_SHARE}/${APEX_FQDN}"
         SMB_USER=$(ask "SMB username" "")
         SMB_PASS=$(ask "SMB password" "")
         exec_with_spinner "Installing SMB client..." apt install -y cifs-utils || {
@@ -569,7 +575,7 @@ upsert_env PG_META_CRYPTO_KEY "$PG_META_CRYPTO_KEY"
 # Database
 upsert_env POSTGRES_HOST "$POSTGRES_HOST"
 upsert_env POSTGRES_DB "$POSTGRES_DB"
-upsert_env POSTGRES_PORT "$POSTGRES_PORT"
+# Note: POSTGRES_PORT is NOT set in .env - Docker Compose handles internal port mapping
 
 # Email
 upsert_env ENABLE_EMAIL_AUTOCONFIRM "$([[ "$EMAIL_AUTOCONFIRM" = "y" ]] && echo true || echo false)"
@@ -579,10 +585,8 @@ upsert_env GOTRUE_SMTP_USER "resend"
 upsert_env GOTRUE_SMTP_PASS "$RESEND_API_KEY"
 upsert_env GOTRUE_SMTP_ADMIN_EMAIL "no-reply@$APEX_FQDN"
 
-# Ports
-upsert_env KONG_HTTP_PORT "0.0.0.0:$KONG_HTTP_PORT"
-[[ "$PIN_HTTPS_LOOPBACK" = "y" ]] && upsert_env KONG_HTTPS_PORT "127.0.0.1:$KONG_HTTPS_PORT"
-[[ "$PIN_POOLER_LOOPBACK" = "y" ]] && upsert_env POOLER_PROXY_PORT_TRANSACTION "127.0.0.1:6543"
+# Ports - NOT written to .env, only used in docker-compose.override.yml
+# Kong and Studio ports are configured in the override file below
 
 # Storage
 [[ "$ENABLE_STORAGE" = "y" ]] && upsert_env STORAGE_BACKEND "file" || upsert_env STORAGE_BACKEND "stub"
@@ -597,12 +601,11 @@ if [[ "$ENABLE_STORAGE" = "y" ]]; then
     print_step_header "◉" "MOUNTING STORAGE"
     echo
     
-    exec_with_spinner "Creating mount point..." mkdir -p "$VM_MOUNT" || {
-        print_error "Failed to create mount point"
-        exit 1
-    }
-    
     if [[ "$STORAGE_PROTO" = "nfs" ]]; then
+        exec_with_spinner "Creating mount point..." mkdir -p "$VM_MOUNT" || {
+            print_error "Failed to create mount point"
+            exit 1
+        }
         grep -qE "[[:space:]]$VM_MOUNT[[:space:]]" /etc/fstab || \
             echo "${UNRAID_HOST}:${UNRAID_EXPORT}  ${VM_MOUNT}  nfs  defaults  0  0" >> /etc/fstab
         exec_with_spinner "Mounting NFS share..." mount -a || {
@@ -610,18 +613,27 @@ if [[ "$ENABLE_STORAGE" = "y" ]]; then
             exit 1
         }
     else
+        # SMB: mount the share to base directory, then create subfolder
+        SMB_MOUNT_POINT="${SMB_MOUNT_BASE}/${UNRAID_SHARE}"
+        mkdir -p "$SMB_MOUNT_POINT"
+        
         CREDF="/root/.smb-${APEX_FQDN}.cred"
         {
             echo "username=${SMB_USER}"
             echo "password=${SMB_PASS}"
         } > "$CREDF"
         chmod 600 "$CREDF"
-        grep -qE "[[:space:]]$VM_MOUNT[[:space:]]" /etc/fstab || \
-            echo "//${UNRAID_HOST}/${UNRAID_SHARE}  ${VM_MOUNT}  cifs  credentials=${CREDF},iocharset=utf8  0  0" >> /etc/fstab
+        
+        # Mount the entire SMB share
+        grep -qE "[[:space:]]$SMB_MOUNT_POINT[[:space:]]" /etc/fstab || \
+            echo "//${UNRAID_HOST}/${UNRAID_SHARE}  ${SMB_MOUNT_POINT}  cifs  credentials=${CREDF},iocharset=utf8  0  0" >> /etc/fstab
         exec_with_spinner "Mounting SMB share..." mount -a || {
             print_error "Failed to mount SMB share. Check credentials and share name."
             exit 1
         }
+        
+        # Create the domain-specific subfolder
+        mkdir -p "$VM_MOUNT"
     fi
     log "Storage mounted at $VM_MOUNT"
 fi
@@ -629,18 +641,34 @@ fi
 # Create docker-compose override
 print_info "Creating docker-compose override..."
 
+# Determine port bindings based on pinning preferences
+if [[ "$PIN_HTTPS_LOOPBACK" = "y" ]]; then
+    KONG_HTTPS_BIND="127.0.0.1:${KONG_HTTPS_PORT}:8443"
+else
+    KONG_HTTPS_BIND="0.0.0.0:${KONG_HTTPS_PORT}:8443"
+fi
+
+if [[ "$PIN_POOLER_LOOPBACK" = "y" ]]; then
+    POOLER_BIND="127.0.0.1:6543:6543"
+else
+    POOLER_BIND="0.0.0.0:6543:6543"
+fi
+
 cat > docker-compose.override.yml <<YAML
 services:
   kong:
     ports:
       - "0.0.0.0:${KONG_HTTP_PORT}:8000"
+      - "${KONG_HTTPS_BIND}"
   
   studio:
     ports:
       - "0.0.0.0:3000:3000"
   
   supavisor:
-    ports: []
+    ports:
+      - "${POOLER_BIND}"
+  
   db:
     ports: []
   auth:
@@ -731,10 +759,11 @@ print_config_line "Anon Key" "${ANON_KEY:0:40}..."
 echo
 
 printf "${C_WHITE}Next Steps:${C_RESET}\n"
-echo "  1) Configure Nginx Proxy Manager to proxy to this VM"
-echo "  2) Set up SSL certificates in NPM"
-echo "  3) Test your API endpoint"
-echo "  4) Visit the Studio dashboard to create your first project"
+echo "  1) Configure Nginx Proxy Manager (NPM) to create two proxy hosts:"
+echo "     • $API_URL → http://localhost:${KONG_HTTP_PORT} (enable WebSockets)"
+echo "     • $SITE_URL → http://localhost:3000"
+echo "  2) NPM will handle SSL certificates automatically (use Let's Encrypt)"
+echo "  3) Test your API endpoint and visit Studio dashboard"
 echo
 
 printf "${C_CYAN}Installation log: ${C_WHITE}$LOGFILE${C_RESET}\n"
