@@ -267,7 +267,8 @@ echo
 # Ensure terminal is ready for interactive input
 stty sane 2>/dev/null || true
 
-ENABLE_ANALYTICS=$(ask_yn "Enable Analytics/Logs? (requires 2GB+ RAM)" "n")
+# Analytics is required - always enabled
+ENABLE_ANALYTICS="y"
 ENABLE_EMAIL=$(ask_yn "Enable Email Authentication?" "y")
 ENABLE_PHONE=$(ask_yn "Enable Phone Authentication?" "n")
 ENABLE_ANONYMOUS=$(ask_yn "Enable Anonymous Users?" "n")
@@ -415,7 +416,7 @@ print_config_line "API URL" "$API_URL"
 echo
 
 printf "${C_WHITE}Services:${C_RESET}\n"
-print_config_line "Analytics" "$ENABLE_ANALYTICS"
+print_config_line "Analytics" "Enabled (required)"
 print_config_line "Email Auth" "$ENABLE_EMAIL"
 print_config_line "Phone Auth" "$ENABLE_PHONE"
 print_config_line "Storage" "$ENABLE_STORAGE"
@@ -685,13 +686,6 @@ if [[ "$ENABLE_STORAGE" = "y" ]]; then
     ports: []
     volumes:
       - ${VM_MOUNT}:/var/lib/storage
-YAML
-fi
-
-if [[ "$ENABLE_ANALYTICS" = "n" ]]; then
-    cat >> docker-compose.override.yml <<'YAML'
-  analytics:
-    profiles: ["dev"]
 YAML
 fi
 
