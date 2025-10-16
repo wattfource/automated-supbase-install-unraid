@@ -71,8 +71,8 @@ ask() {
 }
 
 ask_yn() {
-    local p="$1" d="${2:-y}" a
-    while true; do
+  local p="$1" d="${2:-y}" a
+  while true; do
         # Ensure output is flushed before reading
         printf "${C_MAGENTA}▶${C_RESET} ${C_WHITE}%s${C_RESET} ${C_CYAN}[" "$p" >&2
         [[ "$d" = "y" ]] && printf "Y/n" >&2 || printf "y/N" >&2
@@ -84,7 +84,7 @@ ask_yn() {
             n|N) echo n; return;;
             *) print_warning "Please enter y or n";;
         esac
-    done
+  done
 }
 
 # Progress spinner
@@ -155,15 +155,15 @@ gen_b64() { openssl rand -base64 "$1" 2>>"$LOGFILE"; }
 b64url() { openssl enc -base64 -A | tr '+/' '-_' | tr -d '='; }
 
 gen_jwt_for_role() {
-    local role="$1" header payload hb pb sig iat exp
-    iat=$(date +%s); exp=$((iat + 3600*24*365*5))
-    header='{"typ":"JWT","alg":"HS256"}'
-    payload="$(jq -nc --arg r "$role" --argjson i "$iat" --argjson e "$exp" \
+  local role="$1" header payload hb pb sig iat exp
+  iat=$(date +%s); exp=$((iat + 3600*24*365*5))
+  header='{"typ":"JWT","alg":"HS256"}'
+  payload="$(jq -nc --arg r "$role" --argjson i "$iat" --argjson e "$exp" \
         '{"role":$r,"iss":"supabase","iat":$i,"exp":$e}' 2>>"$LOGFILE")"
-    hb="$(printf '%s' "$header" | b64url)"
-    pb="$(printf '%s' "$payload" | b64url)"
+  hb="$(printf '%s' "$header" | b64url)"
+  pb="$(printf '%s' "$payload" | b64url)"
     sig="$(printf '%s.%s' "$hb" "$pb" | openssl dgst -binary -sha256 -hmac "$JWT_SECRET" | b64url 2>>"$LOGFILE")"
-    printf '%s.%s.%s\n' "$hb" "$pb" "$sig"
+  printf '%s.%s.%s\n' "$hb" "$pb" "$sig"
 }
 
 upsert_env() {
@@ -267,10 +267,9 @@ echo
 # Ensure terminal is ready for interactive input
 stty sane 2>/dev/null || true
 
-# Analytics is required - always enabled
-ENABLE_ANALYTICS="y"
+ENABLE_ANALYTICS=$(ask_yn "Enable Analytics/Logs? (requires 2GB+ RAM)" "n")
 ENABLE_EMAIL=$(ask_yn "Enable Email Authentication?" "y")
-ENABLE_PHONE=$(ask_yn "Enable Phone Authentication?" "n")
+ENABLE_PHONE=$(ask_yn "Enable Phone Authentication?" "y")
 ENABLE_ANONYMOUS=$(ask_yn "Enable Anonymous Users?" "n")
 ENABLE_STORAGE=$(ask_yn "Enable Storage (file uploads)?" "y")
 ENABLE_REALTIME=$(ask_yn "Enable Realtime?" "y")
@@ -286,8 +285,13 @@ print_info "Generating crypto-secure secrets..."
 POSTGRES_PASSWORD="$(gen_b64 32)"
 JWT_SECRET="$(gen_b64 48)"
 PG_META_CRYPTO_KEY="$(gen_b64 32)"
+SECRET_KEY_BASE="$(gen_b64 64)"
+VAULT_ENC_KEY="$(gen_b64 32)"
+LOGFLARE_PUBLIC="$(gen_b64 32)"
+LOGFLARE_PRIVATE="$(gen_b64 32)"
+DASHBOARD_PASSWORD="$(gen_b64 16)"
 
-log "Generated: POSTGRES_PASSWORD, JWT_SECRET, PG_META_CRYPTO_KEY"
+log "Generated: POSTGRES_PASSWORD, JWT_SECRET, PG_META_CRYPTO_KEY, SECRET_KEY_BASE, VAULT_ENC_KEY, DASHBOARD_PASSWORD"
 print_success "Secrets generated"
 
 # STEP 3: Database Config
@@ -356,9 +360,43 @@ fi
 
 log "Email: autoconfirm=$EMAIL_AUTOCONFIRM smtp_host=$RESEND_SMTP_HOST"
 
+# Phone Auth configuration (if enabled)
+if [[ "$ENABLE_PHONE" = "y" ]]; then
+    ENABLE_PHONE_AUTOCONFIRM=$(ask_yn "Auto-confirm phone signups? (dev only)" "n")
+else
+    ENABLE_PHONE_AUTOCONFIRM="false"
+fi
+
+# STEP 7: Studio Configuration
+print_step_header "7" "STUDIO CONFIG"
+echo
+
+DASHBOARD_USERNAME=$(ask "Dashboard Username" "supabase")
+STUDIO_DEFAULT_ORGANIZATION=$(ask "Studio Default Organization" "Default Organization")
+STUDIO_DEFAULT_PROJECT=$(ask "Studio Default Project" "Default Project")
+
+USE_OPENAI=$(ask_yn "Enable SQL Editor AI Assistant? (requires OpenAI API key)" "n")
+if [[ "$USE_OPENAI" = "y" ]]; then
+    OPENAI_API_KEY=$(ask "OpenAI API Key" "")
+else
+    OPENAI_API_KEY=""
+fi
+
+log "Studio: user=$DASHBOARD_USERNAME org=$STUDIO_DEFAULT_ORGANIZATION project=$STUDIO_DEFAULT_PROJECT"
+
+# STEP 8: Additional Configuration
+print_step_header "8" "ADDITIONAL CONFIG"
+echo
+
+JWT_EXPIRY=$(ask "JWT Expiry (seconds)" "3600")
+PGRST_DB_SCHEMAS=$(ask "PostgREST DB Schemas" "public,storage,graphql_public")
+POOLER_TENANT_ID=$(ask "Pooler Tenant ID" "supabase-local")
+
+log "Config: jwt_expiry=$JWT_EXPIRY schemas=$PGRST_DB_SCHEMAS pooler_tenant=$POOLER_TENANT_ID"
+
 # Storage configuration
 if [[ "$ENABLE_STORAGE" = "y" ]]; then
-    print_step_header "7" "STORAGE CONFIG"
+    print_step_header "9" "STORAGE CONFIG"
     echo
     
     print_info "Storage architecture: Unraid share → VM mount point → Docker container"
@@ -366,7 +404,7 @@ if [[ "$ENABLE_STORAGE" = "y" ]]; then
     
     STORAGE_PROTO=$(ask "Storage protocol (nfs|smb)" "nfs")
     
-    if [[ "$STORAGE_PROTO" = "nfs" ]]; then
+if [[ "$STORAGE_PROTO" = "nfs" ]]; then
         UNRAID_HOST=$(ask "Unraid server hostname or IP (e.g. 192.168.1.70)" "")
         UNRAID_EXPORT=$(ask "Unraid NFS export path" "/mnt/user/supabase-storage/${APEX_FQDN}")
         STORAGE_MOUNT=$(ask "VM mount point" "/mnt/unraid/supabase-storage/${APEX_FQDN}")
@@ -394,7 +432,7 @@ else
 fi
 
 # Firewall config
-print_step_header "8" "SECURITY CONFIG"
+print_step_header "10" "SECURITY CONFIG"
 echo
 
 PIN_HTTPS_LOOPBACK=$(ask_yn "Pin Kong HTTPS 8443 to localhost (recommended)" "y")
@@ -420,11 +458,19 @@ print_config_line "API URL" "$API_URL"
 echo
 
 printf "${C_WHITE}Services:${C_RESET}\n"
-print_config_line "Analytics" "Enabled (required)"
+print_config_line "Analytics" "$ENABLE_ANALYTICS"
 print_config_line "Email Auth" "$ENABLE_EMAIL"
 print_config_line "Phone Auth" "$ENABLE_PHONE"
+print_config_line "Anonymous Users" "$ENABLE_ANONYMOUS"
 print_config_line "Storage" "$ENABLE_STORAGE"
 print_config_line "Realtime" "$ENABLE_REALTIME"
+print_config_line "Edge Functions" "$ENABLE_EDGE"
+echo
+
+printf "${C_WHITE}Dashboard:${C_RESET}\n"
+print_config_line "Username" "$DASHBOARD_USERNAME"
+print_config_line "Organization" "$STUDIO_DEFAULT_ORGANIZATION"
+print_config_line "Project" "$STUDIO_DEFAULT_PROJECT"
 echo
 
 if [[ "$ENABLE_STORAGE" = "y" ]]; then
@@ -542,7 +588,7 @@ fi
 
 # Backup existing env
 if [[ -f .env ]]; then
-    cp -a .env ".env.bak.$(date +%F-%H%M%S)"
+cp -a .env ".env.bak.$(date +%F-%H%M%S)"
     log "Backed up existing .env file"
 fi
 
@@ -575,23 +621,73 @@ upsert_env POSTGRES_PASSWORD "$POSTGRES_PASSWORD"
 upsert_env JWT_SECRET "$JWT_SECRET_ENV"
 upsert_env ANON_KEY "$ANON_KEY"
 upsert_env SERVICE_ROLE_KEY "$SERVICE_ROLE_KEY"
+upsert_env DASHBOARD_USERNAME "$DASHBOARD_USERNAME"
+upsert_env DASHBOARD_PASSWORD "$DASHBOARD_PASSWORD"
+upsert_env SECRET_KEY_BASE "$SECRET_KEY_BASE"
+upsert_env VAULT_ENC_KEY "$VAULT_ENC_KEY"
 upsert_env PG_META_CRYPTO_KEY "$PG_META_CRYPTO_KEY"
 
 # Database
 upsert_env POSTGRES_HOST "$POSTGRES_HOST"
 upsert_env POSTGRES_DB "$POSTGRES_DB"
-# Note: POSTGRES_PORT is NOT set in .env - Docker Compose handles internal port mapping
+upsert_env POSTGRES_PORT "5432"
 
-# Email
+# Supavisor - Connection Pooler
+upsert_env POOLER_PROXY_PORT_TRANSACTION "6543"
+upsert_env POOLER_DEFAULT_POOL_SIZE "20"
+upsert_env POOLER_MAX_CLIENT_CONN "100"
+upsert_env POOLER_TENANT_ID "$POOLER_TENANT_ID"
+upsert_env POOLER_DB_POOL_SIZE "5"
+
+# API Proxy - Kong
+upsert_env KONG_HTTP_PORT "$KONG_HTTP_PORT"
+upsert_env KONG_HTTPS_PORT "$KONG_HTTPS_PORT"
+
+# API - PostgREST
+upsert_env PGRST_DB_SCHEMAS "$PGRST_DB_SCHEMAS"
+
+# Auth - GoTrue
+upsert_env SITE_URL "$SITE_URL"
+upsert_env ADDITIONAL_REDIRECT_URLS "$ADDITIONAL_REDIRECT"
+upsert_env JWT_EXPIRY "$JWT_EXPIRY"
+upsert_env DISABLE_SIGNUP "$([[ "$ENABLE_EMAIL" = "y" ]] && echo false || echo true)"
+upsert_env API_EXTERNAL_URL "$API_URL"
+
+# Mailer Config
+upsert_env MAILER_URLPATHS_CONFIRMATION "/auth/v1/verify"
+upsert_env MAILER_URLPATHS_INVITE "/auth/v1/verify"
+upsert_env MAILER_URLPATHS_RECOVERY "/auth/v1/verify"
+upsert_env MAILER_URLPATHS_EMAIL_CHANGE "/auth/v1/verify"
+
+# Email auth
+upsert_env ENABLE_EMAIL_SIGNUP "$([[ "$ENABLE_EMAIL" = "y" ]] && echo true || echo false)"
 upsert_env ENABLE_EMAIL_AUTOCONFIRM "$([[ "$EMAIL_AUTOCONFIRM" = "y" ]] && echo true || echo false)"
-upsert_env GOTRUE_SMTP_HOST "$RESEND_SMTP_HOST"
-upsert_env GOTRUE_SMTP_PORT "587"
-upsert_env GOTRUE_SMTP_USER "resend"
-upsert_env GOTRUE_SMTP_PASS "$RESEND_API_KEY"
-upsert_env GOTRUE_SMTP_ADMIN_EMAIL "no-reply@$APEX_FQDN"
+upsert_env SMTP_ADMIN_EMAIL "$([[ "$ENABLE_EMAIL" = "y" ]] && echo "no-reply@$APEX_FQDN" || echo "admin@example.com")"
+upsert_env SMTP_HOST "$RESEND_SMTP_HOST"
+upsert_env SMTP_PORT "587"
+upsert_env SMTP_USER "resend"
+upsert_env SMTP_PASS "$RESEND_API_KEY"
+upsert_env SMTP_SENDER_NAME "Supabase Auth"
+upsert_env ENABLE_ANONYMOUS_USERS "$([[ "$ENABLE_ANONYMOUS" = "y" ]] && echo true || echo false)"
 
-# Ports - NOT written to .env, only used in docker-compose.override.yml
-# Kong and Studio ports are configured in the override file below
+# Phone auth
+upsert_env ENABLE_PHONE_SIGNUP "$([[ "$ENABLE_PHONE" = "y" ]] && echo true || echo false)"
+upsert_env ENABLE_PHONE_AUTOCONFIRM "$([[ "$ENABLE_PHONE_AUTOCONFIRM" = "y" ]] && echo true || echo false)"
+
+# Studio
+upsert_env STUDIO_DEFAULT_ORGANIZATION "$STUDIO_DEFAULT_ORGANIZATION"
+upsert_env STUDIO_DEFAULT_PROJECT "$STUDIO_DEFAULT_PROJECT"
+upsert_env SUPABASE_PUBLIC_URL "$API_URL"
+upsert_env IMGPROXY_ENABLE_WEBP_DETECTION "true"
+upsert_env OPENAI_API_KEY "$OPENAI_API_KEY"
+
+# Functions
+upsert_env FUNCTIONS_VERIFY_JWT "$([[ "$ENABLE_EDGE" = "y" ]] && echo false || echo false)"
+
+# Logs - Analytics
+upsert_env LOGFLARE_PUBLIC_ACCESS_TOKEN "$LOGFLARE_PUBLIC"
+upsert_env LOGFLARE_PRIVATE_ACCESS_TOKEN "$LOGFLARE_PRIVATE"
+upsert_env DOCKER_SOCKET_LOCATION "/var/run/docker.sock"
 
 # Storage
 [[ "$ENABLE_STORAGE" = "y" ]] && upsert_env STORAGE_BACKEND "file" || upsert_env STORAGE_BACKEND "stub"
@@ -606,28 +702,28 @@ if [[ "$ENABLE_STORAGE" = "y" ]]; then
     print_step_header "◉" "MOUNTING STORAGE"
     echo
     
-    if [[ "$STORAGE_PROTO" = "nfs" ]]; then
+if [[ "$STORAGE_PROTO" = "nfs" ]]; then
         exec_with_spinner "Creating mount point..." mkdir -p "$VM_MOUNT" || {
             print_error "Failed to create mount point"
             exit 1
         }
-        grep -qE "[[:space:]]$VM_MOUNT[[:space:]]" /etc/fstab || \
-            echo "${UNRAID_HOST}:${UNRAID_EXPORT}  ${VM_MOUNT}  nfs  defaults  0  0" >> /etc/fstab
+  grep -qE "[[:space:]]$VM_MOUNT[[:space:]]" /etc/fstab || \
+    echo "${UNRAID_HOST}:${UNRAID_EXPORT}  ${VM_MOUNT}  nfs  defaults  0  0" >> /etc/fstab
         exec_with_spinner "Mounting NFS share..." mount -a || {
             print_error "Failed to mount NFS share. Check that NFS export exists on Unraid."
             exit 1
         }
-    else
+else
         # SMB: mount the share to base directory, then create subfolder
         SMB_MOUNT_POINT="${SMB_MOUNT_BASE}/${UNRAID_SHARE}"
         mkdir -p "$SMB_MOUNT_POINT"
         
-        CREDF="/root/.smb-${APEX_FQDN}.cred"
+  CREDF="/root/.smb-${APEX_FQDN}.cred"
         {
             echo "username=${SMB_USER}"
             echo "password=${SMB_PASS}"
         } > "$CREDF"
-        chmod 600 "$CREDF"
+  chmod 600 "$CREDF"
         
         # Mount the entire SMB share
         grep -qE "[[:space:]]$SMB_MOUNT_POINT[[:space:]]" /etc/fstab || \
@@ -665,11 +761,11 @@ services:
     ports:
       - "0.0.0.0:${KONG_HTTP_PORT}:8000"
       - "${KONG_HTTPS_BIND}"
-  
+
   studio:
     ports:
       - "0.0.0.0:3000:3000"
-  
+
   supavisor:
     ports:
       - "${POOLER_BIND}"
@@ -750,16 +846,30 @@ log "=== Installation completed successfully ==="
 clear
 printf "${C_GREEN}Deployment successful.${C_RESET}\n\n"
 
-# Display critical API keys in a prominent warning box
+# Display critical credentials in a prominent warning box
 printf "${C_RED}╔══════════════════════════════════════════════════════════════════════════════════╗${C_RESET}\n"
-printf "${C_RED}║                          🔴 RECORD THESE KEYS NOW 🔴                            ║${C_RESET}\n"
-printf "${C_RED}║                    These keys will not be shown again!                           ║${C_RESET}\n"
+printf "${C_RED}║                       🔴 RECORD THESE CREDENTIALS NOW 🔴                        ║${C_RESET}\n"
+printf "${C_RED}║              These will be stored in /srv/supabase/.env only!                   ║${C_RESET}\n"
 printf "${C_RED}╠══════════════════════════════════════════════════════════════════════════════════╣${C_RESET}\n"
-printf "${C_RED}║${C_RESET} ${C_WHITE}ANON_KEY (public - safe for frontend):${C_RESET}\n"
-printf "${C_YELLOW}%s${C_RESET}\n" "$ANON_KEY"
 echo
-printf "${C_RED}║${C_RESET} ${C_WHITE}SERVICE_ROLE_KEY (secret - NEVER expose to frontend):${C_RESET}\n"
+printf "${C_WHITE}Dashboard Access:${C_RESET}\n"
+printf "  URL:      ${C_CYAN}%s${C_RESET}\n" "$API_URL"
+printf "  Username: ${C_YELLOW}%s${C_RESET}\n" "$DASHBOARD_USERNAME"
+printf "  Password: ${C_YELLOW}%s${C_RESET}\n" "$DASHBOARD_PASSWORD"
+echo
+printf "${C_WHITE}Database Access:${C_RESET}\n"
+printf "  Host:     ${C_CYAN}%s${C_RESET}\n" "$POSTGRES_HOST"
+printf "  Port:     ${C_CYAN}5432${C_RESET} (session) / ${C_CYAN}6543${C_RESET} (pooled)\n"
+printf "  Database: ${C_CYAN}%s${C_RESET}\n" "$POSTGRES_DB"
+printf "  Password: ${C_YELLOW}%s${C_RESET}\n" "$POSTGRES_PASSWORD"
+printf "  Tenant:   ${C_CYAN}%s${C_RESET}\n" "$POOLER_TENANT_ID"
+echo
+printf "${C_WHITE}API Keys:${C_RESET}\n"
+printf "${C_GREEN}ANON_KEY${C_RESET} (public - safe for frontend):\n"
+printf "${C_YELLOW}%s${C_RESET}\n\n" "$ANON_KEY"
+printf "${C_RED}SERVICE_ROLE_KEY${C_RESET} (secret - NEVER expose to frontend):\n"
 printf "${C_YELLOW}%s${C_RESET}\n" "$SERVICE_ROLE_KEY"
+echo
 printf "${C_RED}╚══════════════════════════════════════════════════════════════════════════════════╝${C_RESET}\n\n"
 
 printf "${C_WHITE}Access Your Supabase Instance:${C_RESET}\n"
