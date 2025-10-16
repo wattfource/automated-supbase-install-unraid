@@ -313,11 +313,15 @@ echo
 
 # Get apex domain
 while :; do
-    APEX_FQDN=$(ask "Apex domain (no subdomain), e.g. example.com" "example.com")
+    APEX_FQDN=$(ask "Apex domain (REQUIRED, e.g. example.com)" "")
+    if [[ -z "$APEX_FQDN" ]]; then
+        print_warning "Apex domain is required"
+        continue
+    fi
     if valid_domain "$APEX_FQDN" && [[ "$APEX_FQDN" != *.*.*.* ]]; then
         break
     else
-        print_warning "Enter a valid apex like example.com"
+        print_warning "Enter a valid apex domain (e.g. example.com, not www.example.com)"
     fi
 done
 
@@ -363,7 +367,7 @@ if [[ "$ENABLE_STORAGE" = "y" ]]; then
     STORAGE_PROTO=$(ask "Storage protocol (nfs|smb)" "nfs")
     
     if [[ "$STORAGE_PROTO" = "nfs" ]]; then
-        UNRAID_HOST=$(ask "Unraid server hostname or IP" "unraid.lan")
+        UNRAID_HOST=$(ask "Unraid server hostname or IP (e.g. 192.168.1.70)" "")
         UNRAID_EXPORT=$(ask "Unraid NFS export path" "/mnt/user/supabase-storage/${APEX_FQDN}")
         STORAGE_MOUNT=$(ask "VM mount point" "/mnt/unraid/supabase-storage/${APEX_FQDN}")
         exec_with_spinner "Installing NFS client..." apt install -y nfs-common || {
@@ -371,13 +375,13 @@ if [[ "$ENABLE_STORAGE" = "y" ]]; then
             exit 1
         }
     else
-        UNRAID_HOST=$(ask "Unraid server hostname or IP" "unraid.lan")
+        UNRAID_HOST=$(ask "Unraid server hostname or IP (e.g. 192.168.1.70)" "")
         UNRAID_SHARE=$(ask "Unraid SMB share name" "supabase-storage")
         # SMB mounts the entire share, then Docker uses a subfolder within it
         SMB_MOUNT_BASE="/mnt/unraid"
         STORAGE_MOUNT="${SMB_MOUNT_BASE}/${UNRAID_SHARE}/${APEX_FQDN}"
-        SMB_USER=$(ask "SMB username" "")
-        SMB_PASS=$(ask "SMB password" "")
+        SMB_USER=$(ask "SMB username (REQUIRED)" "")
+        SMB_PASS=$(ask "SMB password (REQUIRED)" "")
         exec_with_spinner "Installing SMB client..." apt install -y cifs-utils || {
             print_error "Failed to install SMB client"
             exit 1
@@ -398,7 +402,7 @@ PIN_POOLER_LOOPBACK=$(ask_yn "Pin Supavisor 5432/6543 to localhost (recommended)
 USE_UFW=$(ask_yn "Configure UFW firewall rules?" "n")
 
 if [[ "$USE_UFW" = "y" ]]; then
-    NPM_HOST_IP=$(ask "Nginx Proxy Manager host IP" "192.168.1.75")
+    NPM_HOST_IP=$(ask "Nginx Proxy Manager host IP (e.g. 192.168.1.75)" "")
     ADMIN_SSH_SRC=$(ask "Admin IP/subnet for SSH" "192.168.1.0/24")
     log "Firewall: UFW enabled, NPM=$NPM_HOST_IP SSH=$ADMIN_SSH_SRC"
 fi
