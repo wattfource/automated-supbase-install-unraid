@@ -95,8 +95,10 @@ Installs and configures the official Supabase self-hosted stack with:
 
 4. **Configure Nginx Proxy Manager**
    After installation, create two proxy hosts:
-   - `api.yourdomain.com` → `http://localhost:8000` (Enable WebSockets)
-   - `studio.yourdomain.com` → `http://localhost:3000` (Add access restrictions)
+   - `api.yourdomain.com` → `http://VM-IP:8000` (Enable WebSockets)
+   - `studio.yourdomain.com` → `http://VM-IP:3000` (Add access restrictions)
+   
+   Replace `VM-IP` with your VM's IP address (displayed at end of installation)
 
 ## Post-Installation
 

@@ -750,16 +750,28 @@ log "=== Installation completed successfully ==="
 clear
 printf "${C_GREEN}Deployment successful.${C_RESET}\n\n"
 
+# Display critical API keys in a prominent warning box
+printf "${C_RED}╔══════════════════════════════════════════════════════════════════════════════════╗${C_RESET}\n"
+printf "${C_RED}║                          🔴 RECORD THESE KEYS NOW 🔴                            ║${C_RESET}\n"
+printf "${C_RED}║                    These keys will not be shown again!                           ║${C_RESET}\n"
+printf "${C_RED}╠══════════════════════════════════════════════════════════════════════════════════╣${C_RESET}\n"
+printf "${C_RED}║${C_RESET} ${C_WHITE}ANON_KEY (public - safe for frontend):${C_RESET}\n"
+printf "${C_YELLOW}%s${C_RESET}\n" "$ANON_KEY"
+echo
+printf "${C_RED}║${C_RESET} ${C_WHITE}SERVICE_ROLE_KEY (secret - NEVER expose to frontend):${C_RESET}\n"
+printf "${C_YELLOW}%s${C_RESET}\n" "$SERVICE_ROLE_KEY"
+printf "${C_RED}╚══════════════════════════════════════════════════════════════════════════════════╝${C_RESET}\n\n"
+
 printf "${C_WHITE}Access Your Supabase Instance:${C_RESET}\n"
 print_config_line "Studio Dashboard" "$SITE_URL"
 print_config_line "API Endpoint" "$API_URL"
-print_config_line "Anon Key" "${ANON_KEY:0:40}..."
+print_config_line "VM IP Address" "$LOCAL_IP"
 echo
 
 printf "${C_WHITE}Next Steps:${C_RESET}\n"
 echo "  1) Configure Nginx Proxy Manager (NPM) to create two proxy hosts:"
-echo "     • $API_URL → http://localhost:${KONG_HTTP_PORT} (enable WebSockets)"
-echo "     • $SITE_URL → http://localhost:3000"
+echo "     • $API_URL → http://${LOCAL_IP}:${KONG_HTTP_PORT} (enable WebSockets)"
+echo "     • $SITE_URL → http://${LOCAL_IP}:3000"
 echo "  2) NPM will handle SSL certificates automatically (use Let's Encrypt)"
 echo "  3) Test your API endpoint and visit Studio dashboard"
 echo
