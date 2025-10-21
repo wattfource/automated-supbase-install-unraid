@@ -852,6 +852,9 @@ if [[ "$ENABLE_STORAGE" = "y" ]]; then
 YAML
 fi
 
+# Initialize YQ_CMD for YAML manipulation
+YQ_CMD=""
+
 # Configure ports in docker-compose.yml if needed
 if [[ "$KONG_HTTP_PORT" != "8000" ]] || [[ "$KONG_HTTPS_PORT" != "8443" ]]; then
     print_info "Configuring custom ports in docker-compose.yml..."
@@ -891,7 +894,7 @@ fi
 if [[ "$ENABLE_ANALYTICS" != "y" ]]; then
     print_info "Disabling analytics service..."
 
-    # Check if yq is available for YAML manipulation (reuse from above)
+    # Set up YQ_CMD if not already set
     if [[ -z "$YQ_CMD" ]]; then
         if ! command -v yq >/dev/null 2>&1; then
             print_warning "yq not found, installing for docker-compose modification..."
