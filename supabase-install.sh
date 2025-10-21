@@ -166,16 +166,37 @@ gen_jwt_for_role() {
   printf '%s.%s.%s\n' "$hb" "$pb" "$sig"
 }
 
+# Function to validate and clean .env file
+validate_env_file() {
+    if [[ ! -f .env ]]; then
+        return 0
+    fi
+
+    log "Validating .env file format..."
+    local temp_file=".env.tmp"
+
+    # Filter out malformed lines and keep only valid KEY=VALUE lines
+    grep -E '^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*[[:space:]]*=' .env > "$temp_file" 2>/dev/null || true
+
+    if [[ -s "$temp_file" ]]; then
+        mv "$temp_file" .env
+        log "Cleaned malformed entries from .env file"
+    else
+        rm -f "$temp_file"
+        log "Warning: .env file appears to be corrupted, recreating..."
+        > .env
+    fi
+}
+
 upsert_env() {
     local k="$1" v="$2"
 
-    # Escape key for grep pattern matching
-    local escaped_k
-    escaped_k="$(printf '%s' "$k" | sed 's/[[\.*^$()+?{|]/\\&/g')"
+    # Ensure .env file is clean before writing
+    validate_env_file
 
-    if grep -q "^${escaped_k}=" .env 2>/dev/null; then
-        # Remove the existing line and add the new one
-        grep -v "^${escaped_k}=" .env > .env.tmp && mv .env.tmp .env
+    # Remove existing line for this key if it exists
+    if [[ -f .env ]] && grep -q "^${k}=" .env 2>/dev/null; then
+        sed -i "/^${k}=/d" .env 2>/dev/null || true
     fi
 
     # Escape value for .env file - wrap in quotes if contains special characters
@@ -623,6 +644,9 @@ print_success "JWT keys generated"
 # Configure environment
 print_step_header "◉" "CONFIGURING ENVIRONMENT"
 echo
+
+print_info "Validating and cleaning .env file..."
+validate_env_file
 
 print_info "Writing environment variables..."
 
