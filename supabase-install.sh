@@ -342,6 +342,17 @@ log "Database: host=$POSTGRES_HOST db=$POSTGRES_DB"
 # STEP 4: API Gateway Config
 print_step_header "4" "API GATEWAY CONFIG"
 echo
+print_info "Kong API Gateway Configuration"
+echo
+
+# Check if default ports are available
+if netstat -tuln 2>/dev/null | grep -q ":8000 " || ss -tuln 2>/dev/null | grep -q ":8000 "; then
+    print_warning "Port 8000 appears to be in use. You may need to:"
+    print_warning "1. Stop the service using port 8000, or"
+    print_warning "2. Choose a different Kong HTTP port"
+    echo
+fi
+
 KONG_HTTP_PORT=$(ask "Kong HTTP Port" "8000")
 KONG_HTTPS_PORT=$(ask "Kong HTTPS Port" "8443")
 
@@ -471,8 +482,14 @@ fi
 print_step_header "10" "SECURITY CONFIG"
 echo
 
-PIN_HTTPS_LOOPBACK=$(ask_yn "Pin Kong HTTPS 8443 to localhost (recommended)" "y")
-PIN_POOLER_LOOPBACK=$(ask_yn "Pin Supavisor 5432/6543 to localhost (recommended)" "y")
+PIN_HTTPS_LOOPBACK=$(ask_yn "Pin Kong HTTPS 8443 to localhost (recommended for security)" "y")
+PIN_POOLER_LOOPBACK=$(ask_yn "Pin Supavisor 5432/6543 to localhost (recommended for security)" "y")
+
+# If ports are in use, suggest port pinning as alternative to changing ports
+if [[ "$PIN_HTTPS_LOOPBACK" != "y" ]]; then
+    print_warning "Note: If you encounter port conflicts, consider enabling port pinning"
+    print_warning "to bind sensitive services to localhost only (more secure)"
+fi
 USE_UFW=$(ask_yn "Configure UFW firewall rules?" "n")
 
 if [[ "$USE_UFW" = "y" ]]; then
@@ -790,6 +807,9 @@ else
     KONG_HTTPS_BIND="0.0.0.0:${KONG_HTTPS_PORT}:8443"
 fi
 
+# Kong HTTP port binding (always network accessible for proxying)
+KONG_HTTP_BIND="${KONG_HTTP_PORT}:8000"
+
 if [[ "$PIN_POOLER_LOOPBACK" = "y" ]]; then
     POOLER_BIND="127.0.0.1:6543:6543"
 else
@@ -798,19 +818,21 @@ fi
 
 cat > docker-compose.override.yml <<YAML
 services:
+  # Port security configuration
   kong:
     ports:
-      - "0.0.0.0:${KONG_HTTP_PORT}:8000"
+      - "${KONG_HTTP_BIND}"
       - "${KONG_HTTPS_BIND}"
 
   studio:
     ports:
-      - "0.0.0.0:3000:3000"
+      - "3000:3000"
 
   supavisor:
     ports:
       - "${POOLER_BIND}"
-  
+
+  # Disable external access to sensitive services
   db:
     ports: []
   auth:
@@ -830,14 +852,13 @@ if [[ "$ENABLE_STORAGE" = "y" ]]; then
 YAML
 fi
 
-# Disable analytics service if not enabled
-if [[ "$ENABLE_ANALYTICS" != "y" ]]; then
-    print_info "Disabling analytics service..."
+# Configure ports in docker-compose.yml if needed
+if [[ "$KONG_HTTP_PORT" != "8000" ]] || [[ "$KONG_HTTPS_PORT" != "8443" ]]; then
+    print_info "Configuring custom ports in docker-compose.yml..."
 
     # Check if yq is available for YAML manipulation
     if ! command -v yq >/dev/null 2>&1; then
         print_warning "yq not found, installing for docker-compose modification..."
-        # Install yq for YAML manipulation
         if command -v curl >/dev/null 2>&1; then
             YQ_VERSION="v4.40.5"
             curl -L "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64" -o /tmp/yq
@@ -845,7 +866,7 @@ if [[ "$ENABLE_ANALYTICS" != "y" ]]; then
             YQ_CMD="/tmp/yq"
         else
             print_error "curl not available, cannot install yq"
-            print_warning "Analytics service will remain but may fail to start properly"
+            print_warning "Using default ports"
             YQ_CMD=""
         fi
     else
@@ -857,6 +878,39 @@ if [[ "$ENABLE_ANALYTICS" != "y" ]]; then
         cp docker-compose.yml docker-compose.yml.backup.$(date +%F-%H%M%S)
         log "Created backup of docker-compose.yml"
 
+        # Update Kong port mappings
+        $YQ_CMD eval ".services.kong.ports = [\"${KONG_HTTP_PORT}:8000\", \"${KONG_HTTPS_BIND}\"]" -i docker-compose.yml 2>/dev/null || {
+            print_warning "Failed to update Kong ports in docker-compose.yml"
+        }
+
+        print_success "Kong ports configured in docker-compose.yml"
+    fi
+fi
+
+# Disable analytics service if not enabled
+if [[ "$ENABLE_ANALYTICS" != "y" ]]; then
+    print_info "Disabling analytics service..."
+
+    # Check if yq is available for YAML manipulation (reuse from above)
+    if [[ -z "$YQ_CMD" ]]; then
+        if ! command -v yq >/dev/null 2>&1; then
+            print_warning "yq not found, installing for docker-compose modification..."
+            if command -v curl >/dev/null 2>&1; then
+                YQ_VERSION="v4.40.5"
+                curl -L "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64" -o /tmp/yq
+                chmod +x /tmp/yq
+                YQ_CMD="/tmp/yq"
+            else
+                print_error "curl not available, cannot install yq"
+                print_warning "Analytics service will remain but may fail to start properly"
+                YQ_CMD=""
+            fi
+        else
+            YQ_CMD="yq"
+        fi
+    fi
+
+    if [[ -n "$YQ_CMD" ]] && [[ -f docker-compose.yml ]]; then
         # Remove analytics service and its dependencies
         $YQ_CMD eval 'del(.services.analytics)' -i docker-compose.yml 2>/dev/null || {
             print_warning "Failed to remove analytics service from docker-compose.yml"
@@ -905,13 +959,13 @@ if [[ "$USE_UFW" = "y" ]]; then
     ufw default deny incoming >> "$LOGFILE" 2>&1
     ufw default allow outgoing >> "$LOGFILE" 2>&1
     ufw allow from "$ADMIN_SSH_SRC" to any port 22 proto tcp >> "$LOGFILE" 2>&1
-    ufw allow from "$NPM_HOST_IP" to any port "$KONG_HTTP_PORT" proto tcp >> "$LOGFILE" 2>&1
+    ufw allow from "$NPM_HOST_IP" to any port "${KONG_HTTP_PORT}" proto tcp >> "$LOGFILE" 2>&1
     ufw allow from "$NPM_HOST_IP" to any port 3000 proto tcp >> "$LOGFILE" 2>&1
     ufw --force enable >> "$LOGFILE" 2>&1
     
-    iptables -I DOCKER-USER -s "$NPM_HOST_IP" -p tcp --dport 8000 -j ACCEPT >> "$LOGFILE" 2>&1
+    iptables -I DOCKER-USER -s "$NPM_HOST_IP" -p tcp --dport "${KONG_HTTP_PORT}" -j ACCEPT >> "$LOGFILE" 2>&1
     iptables -I DOCKER-USER -s "$NPM_HOST_IP" -p tcp --dport 3000 -j ACCEPT >> "$LOGFILE" 2>&1
-    iptables -I DOCKER-USER -p tcp --dport 8000 -j DROP >> "$LOGFILE" 2>&1
+    iptables -I DOCKER-USER -p tcp --dport "${KONG_HTTP_PORT}" -j DROP >> "$LOGFILE" 2>&1
     iptables -I DOCKER-USER -p tcp --dport 3000 -j DROP >> "$LOGFILE" 2>&1
     iptables -I DOCKER-USER -p tcp --dport 8443 -j DROP >> "$LOGFILE" 2>&1
     iptables -I DOCKER-USER -p tcp --dport 6543 -j DROP >> "$LOGFILE" 2>&1
