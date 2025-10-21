@@ -1,6 +1,8 @@
 # Quick Start Guide - Supabase Installation
 
-## Prerequisites One-Liner (Bulletproof Install)
+This guide covers the **two-step installation process**: prerequisites installation followed by Supabase deployment.
+
+## Step 1: Prerequisites Installation (Git, Docker, Docker Compose)
 
 This command installs Git, Docker, and Docker Compose with best practices:
 
@@ -37,9 +39,29 @@ chmod +x prerequisites-install.sh;
 
 ---
 
-## Full Installation (Prerequisites + Supabase)
+## Step 2: Supabase Installation
 
-Run both scripts in sequence:
+Run the Supabase installer:
+
+```bash
+sudo bash -c '
+set -euo pipefail;
+cd /tmp;
+curl -fsSL https://raw.githubusercontent.com/wattfource/automated-supbase-install-unraid/main/supabase-install.sh -o supabase-install.sh;
+chmod +x supabase-install.sh;
+./supabase-install.sh;
+'
+```
+
+This will:
+1. Run the interactive Supabase configuration wizard
+2. Deploy the complete Supabase stack
+
+---
+
+## Combined Installation (Both Steps Together)
+
+If you prefer to run both steps in one command:
 
 ```bash
 sudo bash -c '
