@@ -228,7 +228,7 @@ require_root
 # Clean up broken configurations from previous failed installations
 cleanup_previous_attempts() {
     local cleaned=0
-    
+
     # Check for broken Docker repository (repository exists but GPG key doesn't)
     if [[ -f /etc/apt/sources.list.d/docker.list ]] && [[ ! -f /etc/apt/keyrings/docker.gpg ]]; then
         log "Detected broken Docker repository configuration from previous attempt"
@@ -236,7 +236,7 @@ cleanup_previous_attempts() {
         rm -f /etc/apt/sources.list.d/docker.list 2>/dev/null || true
         cleaned=1
     fi
-    
+
     # Check for orphaned Docker keyring directory
     if [[ -d /etc/apt/keyrings ]] && [[ ! -f /etc/apt/keyrings/docker.gpg ]]; then
         # Remove only if it's empty or contains broken Docker keys
@@ -244,7 +244,7 @@ cleanup_previous_attempts() {
             rmdir /etc/apt/keyrings 2>/dev/null || true
         fi
     fi
-    
+
     # Clean up any partial Supabase installations
     if [[ -d "/srv/supabase" ]] && [[ ! -f "/srv/supabase/docker-compose.yml" ]]; then
         log "Detected incomplete Supabase installation directory"
@@ -252,7 +252,7 @@ cleanup_previous_attempts() {
         rm -rf /srv/supabase 2>/dev/null || true
         cleaned=1
     fi
-    
+
     # Clean up any orphaned Docker containers from previous attempts
     if command -v docker >/dev/null 2>&1; then
         local orphaned_containers=$(docker ps -a --filter "name=supabase" --format "{{.Names}}" 2>/dev/null || true)
@@ -263,8 +263,17 @@ cleanup_previous_attempts() {
             docker rm $(echo "$orphaned_containers") 2>/dev/null || true
             cleaned=1
         fi
+
+        # Also clean up any Docker networks that might be conflicting
+        local supabase_networks=$(docker network ls --filter "name=supabase" --format "{{.Name}}" 2>/dev/null || true)
+        if [[ -n "$supabase_networks" ]]; then
+            log "Found Supabase Docker networks from previous attempts"
+            print_warning "Cleaning up Supabase Docker networks..."
+            docker network rm $(echo "$supabase_networks") 2>/dev/null || true
+            cleaned=1
+        fi
     fi
-    
+
     # If we cleaned anything, update apt cache
     if [[ $cleaned -eq 1 ]]; then
         log "Running apt update to refresh package lists..."
@@ -345,11 +354,12 @@ echo
 print_info "Kong API Gateway Configuration"
 echo
 
-# Check if default ports are available
-if netstat -tuln 2>/dev/null | grep -q ":8000 " || ss -tuln 2>/dev/null | grep -q ":8000 "; then
-    print_warning "Port 8000 appears to be in use. You may need to:"
-    print_warning "1. Stop the service using port 8000, or"
-    print_warning "2. Choose a different Kong HTTP port"
+# Check if default ports are available (including Docker containers)
+if netstat -tuln 2>/dev/null | grep -q ":8000 " || ss -tuln 2>/dev/null | grep -q ":8000 " || docker ps -q 2>/dev/null | xargs -r docker port 2>/dev/null | grep -q ":8000"; then
+    print_warning "Port 8000 appears to be in use (possibly by Docker containers). You may need to:"
+    print_warning "1. Stop any existing Supabase containers: docker compose down"
+    print_warning "2. Clean up Docker networks: docker network prune"
+    print_warning "3. Choose a different Kong HTTP port"
     echo
 fi
 
@@ -493,6 +503,15 @@ fi
 USE_UFW=$(ask_yn "Configure UFW firewall rules?" "n")
 
 if [[ "$USE_UFW" = "y" ]]; then
+    print_info "Firewall Configuration (UFW + iptables)"
+    echo
+    print_info "Nginx Proxy Manager acts as SSL termination and reverse proxy for your Supabase services."
+    print_info "We need its IP address to configure firewall rules that:"
+    echo "  • Allow NPM to access Supabase services"
+    echo "  • Block direct access from other IPs"
+    echo "  • Protect sensitive database ports"
+    echo
+
     NPM_HOST_IP=$(ask "Nginx Proxy Manager host IP (e.g. 192.168.1.75)" "")
     ADMIN_SSH_SRC=$(ask "Admin IP/subnet for SSH" "192.168.1.0/24")
     log "Firewall: UFW enabled, NPM=$NPM_HOST_IP SSH=$ADMIN_SSH_SRC"
@@ -935,6 +954,14 @@ print_success "Override configured"
 print_step_header "◉" "DEPLOYING CONTAINERS"
 echo
 
+# Clean up any existing containers before starting new ones
+if command -v docker >/dev/null 2>&1 && [[ -f docker-compose.yml ]]; then
+    print_info "Cleaning up any existing Supabase containers..."
+    docker compose down 2>/dev/null || true
+    # Also clean up any orphaned containers
+    docker ps -a --filter "name=supabase" --format "{{.Names}}" 2>/dev/null | xargs -r docker rm -f 2>/dev/null || true
+fi
+
 exec_with_spinner "Pulling container images (this may take a while)..." docker compose pull || {
     print_error "Failed to pull Docker images. Please check your internet connection and Docker installation."
     exit 1
@@ -942,6 +969,10 @@ exec_with_spinner "Pulling container images (this may take a while)..." docker c
 
 exec_with_spinner "Starting Supabase services..." docker compose up -d || {
     print_error "Failed to start Supabase services. Check Docker logs with: docker compose logs"
+    print_error "If you see port conflicts, try:"
+    print_error "  1. docker compose down (stop all containers)"
+    print_error "  2. docker system prune (clean up networks)"
+    print_error "  3. Change Kong HTTP port to 8001"
     exit 1
 }
 

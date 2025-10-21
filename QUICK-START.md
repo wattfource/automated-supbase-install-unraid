@@ -61,6 +61,8 @@ This will:
 
 **Note:** During installation, you can choose to disable Analytics/Logs to save RAM (requires 2GB+ when enabled). Note that disabling analytics will remove logging functionality from Supabase Studio.
 
+**Firewall Setup:** If you enable UFW firewall, the installer will ask for your Unraid host IP (where Nginx Proxy Manager runs) to configure security rules.
+
 ---
 
 ## Combined Installation (Both Steps Together)
@@ -183,6 +185,18 @@ sudo apt update
 **Skip animation in Supabase installer:**
 ```bash
 SKIP_ANIMATION=1 ./supabase-install.sh
+```
+
+**If you get port conflicts:**
+```bash
+# Stop existing containers and clean up
+cd /srv/supabase
+docker compose down
+docker system prune -f
+
+# Re-run with different ports
+# Kong HTTP Port: 8001 (instead of 8000)
+# Kong HTTPS Port: 8444 (instead of 8443)
 ```
 
 ---

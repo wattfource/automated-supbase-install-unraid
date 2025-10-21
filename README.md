@@ -162,6 +162,8 @@ The Supabase installer will guide you through:
 
 **Note:** Analytics/Logs service (Logflare) provides logging functionality in Supabase Studio. It requires 2GB+ RAM and can be disabled to save resources. When disabled, you won't have access to logs in the Studio dashboard.
 
+**Important:** The installer will prompt for your Unraid host IP (where Nginx Proxy Manager runs) if you enable firewall security. This creates firewall rules that only allow access from NPM while blocking direct access from other IPs.
+
 ### Alternative: Combined Installation (Both Steps)
 
 If you prefer to run both steps together:
@@ -196,12 +198,29 @@ sudo apt update
 # Then run the prerequisites installer again
 ```
 
+**If you get port conflicts (address already in use):**
+```bash
+# Stop any existing Supabase containers
+cd /srv/supabase
+docker compose down
+
+# Clean up Docker networks and containers
+docker system prune -f
+docker ps -a --filter "name=supabase" | xargs -r docker rm -f
+
+# Re-run the installer with different ports
+# Kong HTTP Port: 8001 (instead of 8000)
+# Kong HTTPS Port: 8444 (instead of 8443)
+```
+
 ### Step 5: Configure Nginx Proxy Manager
 After installation, create two proxy hosts:
-- `api.yourdomain.com` → `http://VM-IP:8000` (Enable WebSockets)
+- `api.yourdomain.com` → `http://VM-IP:[KONG_HTTP_PORT]` (Enable WebSockets)
 - `studio.yourdomain.com` → `http://VM-IP:3000` (Add access restrictions)
 
-Replace `VM-IP` with your VM's IP address (displayed at end of installation)
+Replace:
+- `VM-IP` with your VM's IP address (displayed at end of installation)
+- `[KONG_HTTP_PORT]` with the Kong HTTP port you chose (default: 8000)
 
 ## Post-Installation
 
