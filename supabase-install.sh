@@ -168,12 +168,22 @@ gen_jwt_for_role() {
 
 upsert_env() {
     local k="$1" v="$2"
-    
-    if grep -q "^${k}=" .env 2>/dev/null; then
+
+    # Escape key for grep pattern matching
+    local escaped_k
+    escaped_k="$(printf '%s' "$k" | sed 's/[[\.*^$()+?{|]/\\&/g')"
+
+    if grep -q "^${escaped_k}=" .env 2>/dev/null; then
         # Remove the existing line and add the new one
-        grep -v "^${k}=" .env > .env.tmp && mv .env.tmp .env
+        grep -v "^${escaped_k}=" .env > .env.tmp && mv .env.tmp .env
     fi
-    echo "${k}=${v}" >> .env
+
+    # Escape value for .env file - wrap in quotes if contains special characters
+    if [[ "$v" =~ [[:space:]+=\$\"\'\\] ]]; then
+        echo "${k}=\"${v}\"" >> .env
+    else
+        echo "${k}=${v}" >> .env
+    fi
     log "Set env: $k"
 }
 
