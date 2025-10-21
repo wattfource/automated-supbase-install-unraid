@@ -287,11 +287,16 @@ JWT_SECRET="$(gen_b64 48)"
 PG_META_CRYPTO_KEY="$(gen_b64 32)"
 SECRET_KEY_BASE="$(gen_b64 64)"
 VAULT_ENC_KEY="$(gen_b64 32)"
-LOGFLARE_PUBLIC="$(gen_b64 32)"
-LOGFLARE_PRIVATE="$(gen_b64 32)"
+if [[ "$ENABLE_ANALYTICS" = "y" ]]; then
+    LOGFLARE_PUBLIC="$(gen_b64 32)"
+    LOGFLARE_PRIVATE="$(gen_b64 32)"
+    log "Generated: POSTGRES_PASSWORD, JWT_SECRET, PG_META_CRYPTO_KEY, SECRET_KEY_BASE, VAULT_ENC_KEY, LOGFLARE_PUBLIC, LOGFLARE_PRIVATE, DASHBOARD_PASSWORD"
+else
+    LOGFLARE_PUBLIC=""
+    LOGFLARE_PRIVATE=""
+    log "Generated: POSTGRES_PASSWORD, JWT_SECRET, PG_META_CRYPTO_KEY, SECRET_KEY_BASE, VAULT_ENC_KEY, DASHBOARD_PASSWORD"
+fi
 DASHBOARD_PASSWORD="$(gen_b64 16)"
-
-log "Generated: POSTGRES_PASSWORD, JWT_SECRET, PG_META_CRYPTO_KEY, SECRET_KEY_BASE, VAULT_ENC_KEY, DASHBOARD_PASSWORD"
 print_success "Secrets generated"
 
 # STEP 3: Database Config
@@ -684,9 +689,11 @@ upsert_env OPENAI_API_KEY "$OPENAI_API_KEY"
 # Functions
 upsert_env FUNCTIONS_VERIFY_JWT "$([[ "$ENABLE_EDGE" = "y" ]] && echo false || echo false)"
 
-# Logs - Analytics
-upsert_env LOGFLARE_PUBLIC_ACCESS_TOKEN "$LOGFLARE_PUBLIC"
-upsert_env LOGFLARE_PRIVATE_ACCESS_TOKEN "$LOGFLARE_PRIVATE"
+# Logs - Analytics (only if enabled)
+if [[ "$ENABLE_ANALYTICS" = "y" ]]; then
+    upsert_env LOGFLARE_PUBLIC_ACCESS_TOKEN "$LOGFLARE_PUBLIC"
+    upsert_env LOGFLARE_PRIVATE_ACCESS_TOKEN "$LOGFLARE_PRIVATE"
+fi
 upsert_env DOCKER_SOCKET_LOCATION "/var/run/docker.sock"
 
 # Storage
@@ -786,6 +793,14 @@ if [[ "$ENABLE_STORAGE" = "y" ]]; then
     ports: []
     volumes:
       - ${VM_MOUNT}:/var/lib/storage
+YAML
+fi
+
+# Disable analytics service if not enabled
+if [[ "$ENABLE_ANALYTICS" != "y" ]]; then
+    cat >> docker-compose.override.yml <<YAML
+  analytics:
+    profiles: []
 YAML
 fi
 

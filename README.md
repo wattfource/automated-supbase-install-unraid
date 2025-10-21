@@ -48,6 +48,56 @@ This installer consists of **two steps**: prerequisites installation followed by
 
 > **📋 Quick Reference**: See [QUICK-START.md](QUICK-START.md) for streamlined installation commands and troubleshooting tips.
 
+### Key Differences from Official Guide
+
+This installer **automates** the official Supabase self-hosting process with several enhancements:
+
+**✅ Automated Configuration**
+- Interactive setup wizard (vs manual `.env` editing)
+- Automatic secret generation (vs manual secret management)
+- Smart defaults and validation
+
+**✅ Enhanced Features**
+- **Storage Integration**: Built-in Unraid NFS/SMB support
+- **Analytics Management**: Optional analytics with proper disabling
+- **Security Options**: Port pinning and firewall configuration
+- **Domain Setup**: Automatic SSL-ready configuration
+
+**🔄 Process Alignment**
+- Downloads official Supabase Docker stack (same as `git clone`)
+- Uses `/srv/supabase` deployment directory (vs `supabase-project`)
+- Generates production-ready `.env` file (vs copying `.env.example`)
+- Same `docker compose` commands for deployment
+
+**⚠️ Minor Deviations**
+- Different default values for some configurations (optimized for production)
+- Enhanced SMTP setup (Resend integration vs fake mail server)
+- Integrated analytics setup (vs separate configuration step)
+
+### Core Process Alignment
+
+The installer follows the **exact same deployment process** as the official guide:
+
+```bash
+# Official manual process:
+git clone --depth 1 https://github.com/supabase/supabase
+mkdir supabase-project
+cp -rf supabase/docker/* supabase-project
+cp supabase/docker/.env.example supabase-project/.env
+cd supabase-project
+docker compose pull
+docker compose up -d
+
+# This installer does the equivalent:
+# ✅ Downloads Supabase Docker stack (git clone equivalent)
+# ✅ Creates deployment directory (/srv/supabase)
+# ✅ Copies all Docker files
+# ✅ Generates .env with proper secrets
+# ✅ Runs docker compose pull && docker compose up -d
+```
+
+**Same result, automated process.**
+
 ### Step 1: Prepare Your Unraid Server
 - Create a Debian 13 VM on Unraid cache
 - Create a `supabase-storage` share on your Unraid array
@@ -103,11 +153,14 @@ chmod +x supabase-install.sh
 
 ### Step 4: Follow the Interactive Prompts
 The Supabase installer will guide you through:
+- **Feature selection** (choose which services to enable/disable)
 - Domain configuration (API & Studio)
 - SMTP email setup (optional)
 - Port configuration
 - Security options (port pinning & firewall)
 - Storage mount (NFS or SMB)
+
+**Note:** Analytics/Logs service requires 2GB+ RAM and can be disabled to save resources
 
 ### Alternative: Combined Installation (Both Steps)
 

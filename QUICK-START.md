@@ -1,6 +1,8 @@
-# Quick Start Guide - Supabase Installation
+# Quick Start Guide - Automated Supabase Installation
 
-This guide covers the **two-step installation process**: prerequisites installation followed by Supabase deployment.
+This guide provides **automated commands** for the official Supabase self-hosting process, with enhancements for Unraid deployment.
+
+**🔄 Based on Official Guide**: Automates the steps from [Supabase Self-Hosting Docs](https://supabase.com/docs/guides/self-hosting/docker)
 
 ## Step 1: Prerequisites Installation (Git, Docker, Docker Compose)
 
@@ -54,8 +56,10 @@ chmod +x supabase-install.sh;
 ```
 
 This will:
-1. Run the interactive Supabase configuration wizard
+1. Run the interactive Supabase configuration wizard (with feature selection)
 2. Deploy the complete Supabase stack
+
+**Note:** During installation, you can choose to disable Analytics/Logs to save RAM (requires 2GB+ when enabled)
 
 ---
 
