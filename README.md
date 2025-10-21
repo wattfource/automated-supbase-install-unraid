@@ -160,7 +160,7 @@ The Supabase installer will guide you through:
 - Security options (port pinning & firewall)
 - Storage mount (NFS or SMB)
 
-**Note:** Analytics/Logs service requires 2GB+ RAM and can be disabled to save resources
+**Note:** Analytics/Logs service (Logflare) provides logging functionality in Supabase Studio. It requires 2GB+ RAM and can be disabled to save resources. When disabled, you won't have access to logs in the Studio dashboard.
 
 ### Alternative: Combined Installation (Both Steps)
 

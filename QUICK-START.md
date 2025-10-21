@@ -59,7 +59,7 @@ This will:
 1. Run the interactive Supabase configuration wizard (with feature selection)
 2. Deploy the complete Supabase stack
 
-**Note:** During installation, you can choose to disable Analytics/Logs to save RAM (requires 2GB+ when enabled)
+**Note:** During installation, you can choose to disable Analytics/Logs to save RAM (requires 2GB+ when enabled). Note that disabling analytics will remove logging functionality from Supabase Studio.
 
 ---
 

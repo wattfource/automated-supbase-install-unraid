@@ -832,10 +832,43 @@ fi
 
 # Disable analytics service if not enabled
 if [[ "$ENABLE_ANALYTICS" != "y" ]]; then
-    cat >> docker-compose.override.yml <<YAML
-  analytics:
-    profiles: []
-YAML
+    print_info "Disabling analytics service..."
+
+    # Check if yq is available for YAML manipulation
+    if ! command -v yq >/dev/null 2>&1; then
+        print_warning "yq not found, installing for docker-compose modification..."
+        # Install yq for YAML manipulation
+        if command -v curl >/dev/null 2>&1; then
+            YQ_VERSION="v4.40.5"
+            curl -L "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64" -o /tmp/yq
+            chmod +x /tmp/yq
+            YQ_CMD="/tmp/yq"
+        else
+            print_error "curl not available, cannot install yq"
+            print_warning "Analytics service will remain but may fail to start properly"
+            YQ_CMD=""
+        fi
+    else
+        YQ_CMD="yq"
+    fi
+
+    if [[ -n "$YQ_CMD" ]] && [[ -f docker-compose.yml ]]; then
+        # Create a backup before modifying
+        cp docker-compose.yml docker-compose.yml.backup.$(date +%F-%H%M%S)
+        log "Created backup of docker-compose.yml"
+
+        # Remove analytics service and its dependencies
+        $YQ_CMD eval 'del(.services.analytics)' -i docker-compose.yml 2>/dev/null || {
+            print_warning "Failed to remove analytics service from docker-compose.yml"
+        }
+
+        # Remove analytics from depends_on for other services
+        $YQ_CMD eval 'del(.services.[].depends_on.analytics)' -i docker-compose.yml 2>/dev/null || {
+            print_warning "Failed to remove analytics dependencies from docker-compose.yml"
+        }
+
+        print_success "Analytics service disabled in docker-compose.yml"
+    fi
 fi
 
 log "Docker compose override created"
