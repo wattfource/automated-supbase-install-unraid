@@ -167,13 +167,13 @@ gen_jwt_for_role() {
 }
 
 upsert_env() {
-    local k="$1" v="$2" esc
-    esc="$(printf '%s' "$v" | sed -e 's/[&/|]/\\&/g')"
+    local k="$1" v="$2"
+    
     if grep -q "^${k}=" .env 2>/dev/null; then
-        sed -i "s|^${k}=.*|${k}=${esc}|" .env
-    else
-        echo "${k}=${v}" >> .env
+        # Remove the existing line and add the new one
+        grep -v "^${k}=" .env > .env.tmp && mv .env.tmp .env
     fi
+    echo "${k}=${v}" >> .env
     log "Set env: $k"
 }
 
