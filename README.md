@@ -66,7 +66,8 @@ This installer **automates** the official Supabase self-hosting process with sev
 - **Storage Integration**: Built-in Unraid NFS/SMB support
 - **Security Options**: Port pinning for sensitive services
 - **Domain Setup**: Automatic SSL-ready configuration
-- **Feature Management**: Interactive selection of optional services
+- **Analytics & Monitoring**: Built-in logging and performance analytics
+- **Feature Management**: Interactive selection of services
 
 **🔄 Process Alignment**
 - Downloads official Supabase Docker stack (same as `git clone`)
@@ -162,6 +163,8 @@ The Supabase installer will guide you through:
 - Port configuration
 - Security options (port pinning)
 - Storage mount (NFS or SMB)
+
+**💡 Recommendation**: Keep Analytics/Logs enabled - it provides the Studio dashboard, API monitoring, and debugging capabilities essential for managing your Supabase instance.
 
 ### Alternative: Combined Installation (Both Steps)
 

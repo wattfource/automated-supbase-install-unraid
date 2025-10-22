@@ -57,7 +57,9 @@ chmod +x supabase-install.sh;
 
 This will:
 1. Run the interactive Supabase configuration wizard (with feature selection)
-2. Deploy the complete Supabase stack
+2. Deploy the complete Supabase stack with analytics and monitoring
+
+**💡 Note**: Keep Analytics/Logs enabled for full functionality including the Studio dashboard and API monitoring.
 
 ---
 
@@ -85,7 +87,7 @@ chmod +x supabase-install.sh;
 This will:
 1. Install all prerequisites (Git, Docker, Docker Compose)
 2. Run the interactive Supabase configuration wizard
-3. Deploy the complete Supabase stack
+3. Deploy the complete Supabase stack with analytics and monitoring
 
 ---
 
