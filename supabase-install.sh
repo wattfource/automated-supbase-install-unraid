@@ -316,7 +316,11 @@ ENABLE_ANONYMOUS=$(ask_yn "Enable Anonymous Users?" "n")
 ENABLE_STORAGE=$(ask_yn "Enable Storage (file uploads)?" "y")
 ENABLE_REALTIME=$(ask_yn "Enable Realtime?" "y")
 ENABLE_EDGE=$(ask_yn "Enable Edge Functions?" "y")
-ENABLE_ANALYTICS=$(ask_yn "Enable Analytics/Logs? (provides Studio dashboard, API monitoring, and debugging)" "y")
+
+# Analytics is always enabled (required for Studio dashboard and monitoring)
+# Most Supabase services depend on analytics: Studio, Kong, Auth, REST, Meta, Functions
+# The 2GB RAM cost is worth it for full functionality and monitoring capabilities
+ENABLE_ANALYTICS="y"
 
 log "Feature selection: Email=$ENABLE_EMAIL Phone=$ENABLE_PHONE Anonymous=$ENABLE_ANONYMOUS Storage=$ENABLE_STORAGE Realtime=$ENABLE_REALTIME Edge=$ENABLE_EDGE Analytics=$ENABLE_ANALYTICS"
 
@@ -330,14 +334,11 @@ JWT_SECRET="$(gen_b64 48)"
 PG_META_CRYPTO_KEY="$(gen_b64 32)"
 SECRET_KEY_BASE="$(gen_b64 64)"
 VAULT_ENC_KEY="$(gen_b64 32)"
-if [[ "$ENABLE_ANALYTICS" = "y" ]]; then
-    LOGFLARE_PUBLIC="$(gen_b64 32)"
-    LOGFLARE_PRIVATE="$(gen_b64 32)"
-    log "Generated: POSTGRES_PASSWORD, JWT_SECRET, PG_META_CRYPTO_KEY, SECRET_KEY_BASE, VAULT_ENC_KEY, LOGFLARE_PUBLIC, LOGFLARE_PRIVATE, DASHBOARD_PASSWORD"
-else
-    log "Generated: POSTGRES_PASSWORD, JWT_SECRET, PG_META_CRYPTO_KEY, SECRET_KEY_BASE, VAULT_ENC_KEY, DASHBOARD_PASSWORD"
-fi
+LOGFLARE_PUBLIC="$(gen_b64 32)"
+LOGFLARE_PRIVATE="$(gen_b64 32)"
 DASHBOARD_PASSWORD="$(gen_b64 16)"
+
+log "Generated: POSTGRES_PASSWORD, JWT_SECRET, PG_META_CRYPTO_KEY, SECRET_KEY_BASE, VAULT_ENC_KEY, LOGFLARE_PUBLIC, LOGFLARE_PRIVATE, DASHBOARD_PASSWORD"
 print_success "Secrets generated"
 
 # STEP 3: Database Config
@@ -503,7 +504,9 @@ print_config_line "Anonymous Users" "$ENABLE_ANONYMOUS"
 print_config_line "Storage" "$ENABLE_STORAGE"
 print_config_line "Realtime" "$ENABLE_REALTIME"
 print_config_line "Edge Functions" "$ENABLE_EDGE"
-print_config_line "Analytics/Logs" "$ENABLE_ANALYTICS"
+
+printf "${C_WHITE}Core Services (Always Enabled):${C_RESET}\n"
+print_config_line "Analytics/Logs" "Enabled (Studio dashboard & monitoring)"
 echo
 
 printf "${C_WHITE}Dashboard:${C_RESET}\n"
@@ -728,15 +731,9 @@ upsert_env FUNCTIONS_VERIFY_JWT "$([[ "$ENABLE_EDGE" = "y" ]] && echo false || e
 
 upsert_env DOCKER_SOCKET_LOCATION "/var/run/docker.sock"
 
-# Set LOGFLARE tokens for analytics (only if enabled)
-if [[ "$ENABLE_ANALYTICS" = "y" ]]; then
-    upsert_env LOGFLARE_PUBLIC_ACCESS_TOKEN "$LOGFLARE_PUBLIC"
-    upsert_env LOGFLARE_PRIVATE_ACCESS_TOKEN "$LOGFLARE_PRIVATE"
-else
-    # Set empty tokens to disable analytics functionality
-    upsert_env LOGFLARE_PUBLIC_ACCESS_TOKEN ""
-    upsert_env LOGFLARE_PRIVATE_ACCESS_TOKEN ""
-fi
+# Set LOGFLARE tokens for analytics (always enabled)
+upsert_env LOGFLARE_PUBLIC_ACCESS_TOKEN "$LOGFLARE_PUBLIC"
+upsert_env LOGFLARE_PRIVATE_ACCESS_TOKEN "$LOGFLARE_PRIVATE"
 
 # Storage
 [[ "$ENABLE_STORAGE" = "y" ]] && upsert_env STORAGE_BACKEND "file" || upsert_env STORAGE_BACKEND "stub"
@@ -843,14 +840,8 @@ cat >> docker-compose.override.yml <<YAML
     ports: []
 YAML
 
-# Configure services based on feature selection
-if [[ "$ENABLE_ANALYTICS" != "y" ]]; then
-    cat >> docker-compose.override.yml <<YAML
-  # Disable vector service when analytics is not enabled (since vector depends on analytics)
-  vector:
-    profiles: []
-YAML
-fi
+# Analytics is always enabled (required for Studio dashboard and monitoring)
+# Vector service will use default configuration
 
 if [[ "$ENABLE_STORAGE" = "y" ]]; then
     cat >> docker-compose.override.yml <<YAML

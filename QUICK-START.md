@@ -59,7 +59,7 @@ This will:
 1. Run the interactive Supabase configuration wizard (with feature selection)
 2. Deploy the complete Supabase stack with analytics and monitoring
 
-**💡 Note**: Keep Analytics/Logs enabled for full functionality including the Studio dashboard and API monitoring.
+**✅ Analytics**: Always enabled - provides Studio dashboard, API monitoring, and debugging capabilities.
 
 ---
 

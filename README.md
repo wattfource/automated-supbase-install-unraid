@@ -66,8 +66,8 @@ This installer **automates** the official Supabase self-hosting process with sev
 - **Storage Integration**: Built-in Unraid NFS/SMB support
 - **Security Options**: Port pinning for sensitive services
 - **Domain Setup**: Automatic SSL-ready configuration
-- **Analytics & Monitoring**: Built-in logging and performance analytics
-- **Feature Management**: Interactive selection of services
+- **Always-Enabled Analytics**: Studio dashboard and monitoring included by default
+- **Complete Feature Set**: All Supabase services working out-of-the-box
 
 **🔄 Process Alignment**
 - Downloads official Supabase Docker stack (same as `git clone`)
@@ -78,6 +78,7 @@ This installer **automates** the official Supabase self-hosting process with sev
 **⚠️ Minor Deviations**
 - Different default values for some configurations (optimized for production)
 - Enhanced SMTP setup (Resend integration vs fake mail server)
+- Always-enabled analytics (vs optional in some setups)
 
 ### Core Process Alignment
 
@@ -101,7 +102,7 @@ docker compose up -d
 # ✅ Runs docker compose pull && docker compose up -d
 ```
 
-**Same result, automated process.**
+**Same result, automated process with full functionality enabled.**
 
 ### Step 1: Prepare Your Unraid Server
 - Create a Debian 13 VM on Unraid cache
@@ -157,14 +158,14 @@ chmod +x supabase-install.sh
 
 ### Step 4: Follow the Interactive Prompts
 The Supabase installer will guide you through:
-- **Feature selection** (choose which services to enable/disable)
+- **Feature selection** (choose which optional services to enable/disable)
 - Domain configuration (API & Studio)
 - SMTP email setup (optional)
 - Port configuration
 - Security options (port pinning)
 - Storage mount (NFS or SMB)
 
-**💡 Recommendation**: Keep Analytics/Logs enabled - it provides the Studio dashboard, API monitoring, and debugging capabilities essential for managing your Supabase instance.
+**✅ Analytics & Monitoring**: Always enabled - provides Studio dashboard, API monitoring, and debugging capabilities essential for managing your Supabase instance.
 
 ### Alternative: Combined Installation (Both Steps)
 
