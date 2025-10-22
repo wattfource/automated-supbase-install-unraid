@@ -8,7 +8,6 @@ Installs and configures the official Supabase self-hosted stack with:
 - Automated dependency installation (Docker, tools)
 - Interactive configuration with sensible defaults
 - Storage integration with Unraid array (NFS or SMB)
-- Optional UFW firewall hardening
 - Port security (localhost-only binding for sensitive services)
 - SSL termination via Nginx Proxy Manager
 
@@ -60,7 +59,7 @@ This installer **automates** the official Supabase self-hosting process with sev
 **✅ Enhanced Features**
 - **Storage Integration**: Built-in Unraid NFS/SMB support
 - **Analytics Management**: Optional analytics with proper disabling
-- **Security Options**: Port pinning and firewall configuration
+- **Security Options**: Port pinning for sensitive services
 - **Domain Setup**: Automatic SSL-ready configuration
 
 **🔄 Process Alignment**
@@ -149,7 +148,7 @@ chmod +x supabase-install.sh
 - ✅ Configures environment variables
 - ✅ Sets up storage mounts (NFS/SMB)
 - ✅ Deploys all containers
-- ✅ Optional firewall configuration
+- ✅ Port security (localhost binding for sensitive services)
 
 ### Step 4: Follow the Interactive Prompts
 The Supabase installer will guide you through:
@@ -157,12 +156,10 @@ The Supabase installer will guide you through:
 - Domain configuration (API & Studio)
 - SMTP email setup (optional)
 - Port configuration
-- Security options (port pinning & firewall)
+- Security options (port pinning for sensitive services)
 - Storage mount (NFS or SMB)
 
 **Note:** Analytics/Logs service (Logflare) provides logging functionality in Supabase Studio. It requires 2GB+ RAM and can be disabled to save resources. When disabled, you won't have access to logs in the Studio dashboard.
-
-**Important:** The installer will prompt for your Unraid host IP (where Nginx Proxy Manager runs) if you enable firewall security. This creates firewall rules that only allow access from NPM while blocking direct access from other IPs.
 
 ### Alternative: Combined Installation (Both Steps)
 
@@ -188,14 +185,6 @@ sudo bash -c 'cd /tmp && wget --no-cache -O prerequisites-install.sh https://raw
 ```bash
 # Skip the intro animation for faster/more reliable startup:
 SKIP_ANIMATION=1 ./supabase-install.sh
-```
-
-**If you get Docker repository errors:**
-```bash
-# Manual cleanup (scripts do this automatically):
-sudo rm -f /etc/apt/sources.list.d/docker.list /etc/apt/keyrings/docker.gpg
-sudo apt update
-# Then run the prerequisites installer again
 ```
 
 **If you get port conflicts (address already in use):**

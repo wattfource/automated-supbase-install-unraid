@@ -61,7 +61,7 @@ This will:
 
 **Note:** During installation, you can choose to disable Analytics/Logs to save RAM (requires 2GB+ when enabled). Note that disabling analytics will remove logging functionality from Supabase Studio.
 
-**Firewall Setup:** If you enable UFW firewall, the installer will ask for your Unraid host IP (where Nginx Proxy Manager runs) to configure security rules.
+**Security Options:** The installer includes port security by binding sensitive services to localhost only (recommended for production).
 
 ---
 

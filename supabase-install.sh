@@ -488,8 +488,8 @@ else
     VM_MOUNT=""
 fi
 
-# Firewall config
-print_step_header "10" "SECURITY CONFIG"
+# Security config
+print_step_header "9" "SECURITY CONFIG"
 echo
 
 PIN_HTTPS_LOOPBACK=$(ask_yn "Pin Kong HTTPS 8443 to localhost (recommended for security)" "y")
@@ -499,22 +499,6 @@ PIN_POOLER_LOOPBACK=$(ask_yn "Pin Supavisor 5432/6543 to localhost (recommended 
 if [[ "$PIN_HTTPS_LOOPBACK" != "y" ]]; then
     print_warning "Note: If you encounter port conflicts, consider enabling port pinning"
     print_warning "to bind sensitive services to localhost only (more secure)"
-fi
-USE_UFW=$(ask_yn "Configure UFW firewall rules?" "n")
-
-if [[ "$USE_UFW" = "y" ]]; then
-    print_info "Firewall Configuration (UFW + iptables)"
-    echo
-    print_info "Nginx Proxy Manager acts as SSL termination and reverse proxy for your Supabase services."
-    print_info "We need its IP address to configure firewall rules that:"
-    echo "  • Allow NPM to access Supabase services"
-    echo "  • Block direct access from other IPs"
-    echo "  • Protect sensitive database ports"
-    echo
-
-    NPM_HOST_IP=$(ask "Nginx Proxy Manager host IP (e.g. 192.168.1.75)" "")
-    ADMIN_SSH_SRC=$(ask "Admin IP/subnet for SSH" "192.168.1.0/24")
-    log "Firewall: UFW enabled, NPM=$NPM_HOST_IP SSH=$ADMIN_SSH_SRC"
 fi
 
 # Configuration Summary
@@ -556,7 +540,6 @@ fi
 printf "${C_WHITE}Security:${C_RESET}\n"
 print_config_line "HTTPS Pinned" "$([[ "$PIN_HTTPS_LOOPBACK" = "y" ]] && echo "127.0.0.1:8443" || echo "0.0.0.0:8443")"
 print_config_line "Pooler Pinned" "$([[ "$PIN_POOLER_LOOPBACK" = "y" ]] && echo "127.0.0.1:5432/6543" || echo "Network accessible")"
-[[ "$USE_UFW" = "y" ]] && print_config_line "Firewall" "Enabled (NPM: $NPM_HOST_IP)"
 echo
 
 if [[ $(ask_yn "Proceed with installation?" "y") = "n" ]]; then
@@ -977,38 +960,7 @@ exec_with_spinner "Starting Supabase services..." docker compose up -d || {
 }
 
 log "Containers deployed"
-
-# Firewall
-if [[ "$USE_UFW" = "y" ]]; then
-    print_step_header "◉" "CONFIGURING FIREWALL"
-    echo
-    
-    exec_with_spinner "Installing UFW..." apt install -y ufw iptables-persistent || {
-        print_error "Failed to install UFW"
-        exit 1
-    }
-    
-    print_info "Configuring firewall rules..."
-    ufw --force reset >> "$LOGFILE" 2>&1
-    ufw default deny incoming >> "$LOGFILE" 2>&1
-    ufw default allow outgoing >> "$LOGFILE" 2>&1
-    ufw allow from "$ADMIN_SSH_SRC" to any port 22 proto tcp >> "$LOGFILE" 2>&1
-    ufw allow from "$NPM_HOST_IP" to any port "${KONG_HTTP_PORT}" proto tcp >> "$LOGFILE" 2>&1
-    ufw allow from "$NPM_HOST_IP" to any port 3000 proto tcp >> "$LOGFILE" 2>&1
-    ufw --force enable >> "$LOGFILE" 2>&1
-    
-    iptables -I DOCKER-USER -s "$NPM_HOST_IP" -p tcp --dport "${KONG_HTTP_PORT}" -j ACCEPT >> "$LOGFILE" 2>&1
-    iptables -I DOCKER-USER -s "$NPM_HOST_IP" -p tcp --dport 3000 -j ACCEPT >> "$LOGFILE" 2>&1
-    iptables -I DOCKER-USER -p tcp --dport "${KONG_HTTP_PORT}" -j DROP >> "$LOGFILE" 2>&1
-    iptables -I DOCKER-USER -p tcp --dport 3000 -j DROP >> "$LOGFILE" 2>&1
-    iptables -I DOCKER-USER -p tcp --dport 8443 -j DROP >> "$LOGFILE" 2>&1
-    iptables -I DOCKER-USER -p tcp --dport 6543 -j DROP >> "$LOGFILE" 2>&1
-    iptables -I DOCKER-USER -p tcp --dport 4000 -j DROP >> "$LOGFILE" 2>&1
-    netfilter-persistent save >> "$LOGFILE" 2>&1
-    
-    log "Firewall configured"
-    print_success "Firewall configured"
-fi
+print_success "All services deployed successfully"
 
 # Completion
 log "=== Installation completed successfully ==="
