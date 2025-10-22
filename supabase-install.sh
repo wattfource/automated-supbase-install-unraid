@@ -210,7 +210,7 @@ upsert_env() {
 
     # Escape value for .env file - quote values that could break docker-compose parsing
     # Docker-compose treats unquoted values with / as variable separators
-    if [[ "$v" =~ / ]] || [[ "$v" =~ [[:space:]+=\$\"\'\\#{}()\[\]!@%^&*~`|:;] ]]; then
+    if [[ "$v" =~ [/\$\`\"\'\\] ]]; then
         # Value contains characters that docker-compose might misinterpret - quote it
         printf '%s="%s"\n' "$k" "$v" >> .env
     else
