@@ -749,10 +749,9 @@ exec_with_spinner "Pulling container images (this may take a while)..." docker c
     exit 1
 }
 
-# Start database first
-print_info "Starting database service..."
-docker compose up -d db || {
-    print_error "Failed to start database service"
+# Start all services
+exec_with_spinner "Starting Supabase services..." docker compose up -d || {
+    print_error "Failed to start Supabase services"
     exit 1
 }
 
@@ -765,12 +764,6 @@ for i in {1..30}; do
     fi
     sleep 2
 done
-
-# Start all remaining services
-exec_with_spinner "Starting all Supabase services..." docker compose up -d || {
-    print_error "Failed to start Supabase services"
-    exit 1
-}
 
 log "Containers deployed successfully"
 
