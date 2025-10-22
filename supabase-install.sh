@@ -792,33 +792,47 @@ fi
 print_info "Creating docker-compose override..."
 
 # Determine port bindings based on pinning preferences
-if [[ "$PIN_HTTPS_LOOPBACK" = "y" ]]; then
-    KONG_HTTPS_BIND="127.0.0.1:${KONG_HTTPS_PORT}:8443"
-else
-    KONG_HTTPS_BIND="0.0.0.0:${KONG_HTTPS_PORT}:8443"
-fi
 
-if [[ "$PIN_POOLER_LOOPBACK" = "y" ]]; then
-    POOLER_BIND="127.0.0.1:6543:6543"
-else
-    POOLER_BIND="0.0.0.0:6543:6543"
-fi
 
+# Create docker-compose override for security and feature configuration
 cat > docker-compose.override.yml <<YAML
 services:
+YAML
+
+# Only add port overrides when we need to change from defaults
+# Default ports: Kong HTTP=8000, Kong HTTPS=8443, Pooler=6543
+if [[ "$PIN_HTTPS_LOOPBACK" = "y" ]] || [[ "$PIN_POOLER_LOOPBACK" = "y" ]] || [[ "$KONG_HTTP_PORT" != "8000" ]]; then
+
+    # Kong HTTP port override (only if different from default 8000)
+    if [[ "$KONG_HTTP_PORT" != "8000" ]]; then
+        cat >> docker-compose.override.yml <<YAML
   kong:
     ports:
-      - "0.0.0.0:${KONG_HTTP_PORT}:8000"
-      - "${KONG_HTTPS_BIND}"
+      - "${KONG_HTTP_PORT}:8000"
+YAML
+    fi
 
-  studio:
+    # Kong HTTPS port override (only if pinning to localhost)
+    if [[ "$PIN_HTTPS_LOOPBACK" = "y" ]]; then
+        cat >> docker-compose.override.yml <<YAML
+  kong:
     ports:
-      - "0.0.0.0:3000:3000"
+      - "127.0.0.1:${KONG_HTTPS_PORT}:8443"
+YAML
+    fi
 
+    # Supavisor port override (only if pinning to localhost)
+    if [[ "$PIN_POOLER_LOOPBACK" = "y" ]]; then
+        cat >> docker-compose.override.yml <<YAML
   supavisor:
     ports:
-      - "${POOLER_BIND}"
-  
+      - "127.0.0.1:6543:6543"
+YAML
+    fi
+fi
+
+# Disable external access to sensitive services (always do this for security)
+cat >> docker-compose.override.yml <<YAML
   db:
     ports: []
   auth:
