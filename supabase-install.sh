@@ -228,7 +228,7 @@ require_root
 # Clean up broken configurations from previous failed installations
 cleanup_previous_attempts() {
     local cleaned=0
-
+    
     # Check for broken Docker repository (repository exists but GPG key doesn't)
     if [[ -f /etc/apt/sources.list.d/docker.list ]] && [[ ! -f /etc/apt/keyrings/docker.gpg ]]; then
         log "Detected broken Docker repository configuration from previous attempt"
@@ -236,7 +236,7 @@ cleanup_previous_attempts() {
         rm -f /etc/apt/sources.list.d/docker.list 2>/dev/null || true
         cleaned=1
     fi
-
+    
     # Check for orphaned Docker keyring directory
     if [[ -d /etc/apt/keyrings ]] && [[ ! -f /etc/apt/keyrings/docker.gpg ]]; then
         # Remove only if it's empty or contains broken Docker keys
@@ -244,7 +244,7 @@ cleanup_previous_attempts() {
             rmdir /etc/apt/keyrings 2>/dev/null || true
         fi
     fi
-
+    
     # Clean up any partial Supabase installations
     if [[ -d "/srv/supabase" ]] && [[ ! -f "/srv/supabase/docker-compose.yml" ]]; then
         log "Detected incomplete Supabase installation directory"
@@ -252,7 +252,7 @@ cleanup_previous_attempts() {
         rm -rf /srv/supabase 2>/dev/null || true
         cleaned=1
     fi
-
+    
     # Clean up any orphaned Docker containers from previous attempts
     if command -v docker >/dev/null 2>&1; then
         local orphaned_containers=$(docker ps -a --filter "name=supabase" --format "{{.Names}}" 2>/dev/null || true)
@@ -263,17 +263,8 @@ cleanup_previous_attempts() {
             docker rm $(echo "$orphaned_containers") 2>/dev/null || true
             cleaned=1
         fi
-
-        # Also clean up any Docker networks that might be conflicting
-        local supabase_networks=$(docker network ls --filter "name=supabase" --format "{{.Name}}" 2>/dev/null || true)
-        if [[ -n "$supabase_networks" ]]; then
-            log "Found Supabase Docker networks from previous attempts"
-            print_warning "Cleaning up Supabase Docker networks..."
-            docker network rm $(echo "$supabase_networks") 2>/dev/null || true
-            cleaned=1
-        fi
     fi
-
+    
     # If we cleaned anything, update apt cache
     if [[ $cleaned -eq 1 ]]; then
         log "Running apt update to refresh package lists..."
@@ -307,7 +298,6 @@ echo
 # Ensure terminal is ready for interactive input
 stty sane 2>/dev/null || true
 
-ENABLE_ANALYTICS=$(ask_yn "Enable Analytics/Logs? (requires 2GB+ RAM)" "n")
 ENABLE_EMAIL=$(ask_yn "Enable Email Authentication?" "y")
 ENABLE_PHONE=$(ask_yn "Enable Phone Authentication?" "y")
 ENABLE_ANONYMOUS=$(ask_yn "Enable Anonymous Users?" "n")
@@ -315,7 +305,7 @@ ENABLE_STORAGE=$(ask_yn "Enable Storage (file uploads)?" "y")
 ENABLE_REALTIME=$(ask_yn "Enable Realtime?" "y")
 ENABLE_EDGE=$(ask_yn "Enable Edge Functions?" "y")
 
-log "Feature selection: Analytics=$ENABLE_ANALYTICS Email=$ENABLE_EMAIL Phone=$ENABLE_PHONE Anonymous=$ENABLE_ANONYMOUS Storage=$ENABLE_STORAGE Realtime=$ENABLE_REALTIME Edge=$ENABLE_EDGE"
+log "Feature selection: Email=$ENABLE_EMAIL Phone=$ENABLE_PHONE Anonymous=$ENABLE_ANONYMOUS Storage=$ENABLE_STORAGE Realtime=$ENABLE_REALTIME Edge=$ENABLE_EDGE"
 
 # STEP 2: Generating Secrets
 print_step_header "2" "GENERATING SECRETS"
@@ -327,16 +317,9 @@ JWT_SECRET="$(gen_b64 48)"
 PG_META_CRYPTO_KEY="$(gen_b64 32)"
 SECRET_KEY_BASE="$(gen_b64 64)"
 VAULT_ENC_KEY="$(gen_b64 32)"
-if [[ "$ENABLE_ANALYTICS" = "y" ]]; then
-    LOGFLARE_PUBLIC="$(gen_b64 32)"
-    LOGFLARE_PRIVATE="$(gen_b64 32)"
-    log "Generated: POSTGRES_PASSWORD, JWT_SECRET, PG_META_CRYPTO_KEY, SECRET_KEY_BASE, VAULT_ENC_KEY, LOGFLARE_PUBLIC, LOGFLARE_PRIVATE, DASHBOARD_PASSWORD"
-else
-    LOGFLARE_PUBLIC=""
-    LOGFLARE_PRIVATE=""
-    log "Generated: POSTGRES_PASSWORD, JWT_SECRET, PG_META_CRYPTO_KEY, SECRET_KEY_BASE, VAULT_ENC_KEY, DASHBOARD_PASSWORD"
-fi
 DASHBOARD_PASSWORD="$(gen_b64 16)"
+
+log "Generated: POSTGRES_PASSWORD, JWT_SECRET, PG_META_CRYPTO_KEY, SECRET_KEY_BASE, VAULT_ENC_KEY, DASHBOARD_PASSWORD"
 print_success "Secrets generated"
 
 # STEP 3: Database Config
@@ -351,18 +334,6 @@ log "Database: host=$POSTGRES_HOST db=$POSTGRES_DB"
 # STEP 4: API Gateway Config
 print_step_header "4" "API GATEWAY CONFIG"
 echo
-print_info "Kong API Gateway Configuration"
-echo
-
-# Check if default ports are available (including Docker containers)
-if netstat -tuln 2>/dev/null | grep -q ":8000 " || ss -tuln 2>/dev/null | grep -q ":8000 " || docker ps -q 2>/dev/null | xargs -r docker port 2>/dev/null | grep -q ":8000"; then
-    print_warning "Port 8000 appears to be in use (possibly by Docker containers). You may need to:"
-    print_warning "1. Stop any existing Supabase containers: docker compose down"
-    print_warning "2. Clean up Docker networks: docker network prune"
-    print_warning "3. Choose a different Kong HTTP port"
-    echo
-fi
-
 KONG_HTTP_PORT=$(ask "Kong HTTP Port" "8000")
 KONG_HTTPS_PORT=$(ask "Kong HTTPS Port" "8443")
 
@@ -488,18 +459,12 @@ else
     VM_MOUNT=""
 fi
 
-# Security config
+# Firewall config
 print_step_header "9" "SECURITY CONFIG"
 echo
 
-PIN_HTTPS_LOOPBACK=$(ask_yn "Pin Kong HTTPS 8443 to localhost (recommended for security)" "y")
-PIN_POOLER_LOOPBACK=$(ask_yn "Pin Supavisor 5432/6543 to localhost (recommended for security)" "y")
-
-# If ports are in use, suggest port pinning as alternative to changing ports
-if [[ "$PIN_HTTPS_LOOPBACK" != "y" ]]; then
-    print_warning "Note: If you encounter port conflicts, consider enabling port pinning"
-    print_warning "to bind sensitive services to localhost only (more secure)"
-fi
+PIN_HTTPS_LOOPBACK=$(ask_yn "Pin Kong HTTPS 8443 to localhost (recommended)" "y")
+PIN_POOLER_LOOPBACK=$(ask_yn "Pin Supavisor 5432/6543 to localhost (recommended)" "y")
 
 # Configuration Summary
 clear_screen
@@ -514,7 +479,6 @@ print_config_line "API URL" "$API_URL"
 echo
 
 printf "${C_WHITE}Services:${C_RESET}\n"
-print_config_line "Analytics" "$ENABLE_ANALYTICS"
 print_config_line "Email Auth" "$ENABLE_EMAIL"
 print_config_line "Phone Auth" "$ENABLE_PHONE"
 print_config_line "Anonymous Users" "$ENABLE_ANONYMOUS"
@@ -742,11 +706,6 @@ upsert_env OPENAI_API_KEY "$OPENAI_API_KEY"
 # Functions
 upsert_env FUNCTIONS_VERIFY_JWT "$([[ "$ENABLE_EDGE" = "y" ]] && echo false || echo false)"
 
-# Logs - Analytics (only if enabled)
-if [[ "$ENABLE_ANALYTICS" = "y" ]]; then
-    upsert_env LOGFLARE_PUBLIC_ACCESS_TOKEN "$LOGFLARE_PUBLIC"
-    upsert_env LOGFLARE_PRIVATE_ACCESS_TOKEN "$LOGFLARE_PRIVATE"
-fi
 upsert_env DOCKER_SOCKET_LOCATION "/var/run/docker.sock"
 
 # Storage
@@ -754,14 +713,6 @@ upsert_env DOCKER_SOCKET_LOCATION "/var/run/docker.sock"
 upsert_env FILE_SIZE_LIMIT "524288000"
 
 chmod 600 .env
-# Ensure .env file is readable by docker-compose
-if [[ -f .env ]]; then
-    # Fix permissions if needed
-    if ! docker compose config --quiet 2>/dev/null; then
-        print_warning ".env file may have permission issues, fixing..."
-        chmod 644 .env
-    fi
-fi
 log "Environment file configured and secured"
 print_success "Environment configured"
 
@@ -817,9 +768,6 @@ else
     KONG_HTTPS_BIND="0.0.0.0:${KONG_HTTPS_PORT}:8443"
 fi
 
-# Kong HTTP port binding (always network accessible for proxying)
-KONG_HTTP_BIND="${KONG_HTTP_PORT}:8000"
-
 if [[ "$PIN_POOLER_LOOPBACK" = "y" ]]; then
     POOLER_BIND="127.0.0.1:6543:6543"
 else
@@ -828,21 +776,19 @@ fi
 
 cat > docker-compose.override.yml <<YAML
 services:
-  # Port security configuration
   kong:
     ports:
-      - "${KONG_HTTP_BIND}"
+      - "0.0.0.0:${KONG_HTTP_PORT}:8000"
       - "${KONG_HTTPS_BIND}"
 
   studio:
     ports:
-      - "3000:3000"
+      - "0.0.0.0:3000:3000"
 
   supavisor:
     ports:
       - "${POOLER_BIND}"
-
-  # Disable external access to sensitive services
+  
   db:
     ports: []
   auth:
@@ -862,81 +808,6 @@ if [[ "$ENABLE_STORAGE" = "y" ]]; then
 YAML
 fi
 
-# Initialize YQ_CMD for YAML manipulation
-YQ_CMD=""
-
-# Configure ports in docker-compose.yml if needed
-if [[ "$KONG_HTTP_PORT" != "8000" ]] || [[ "$KONG_HTTPS_PORT" != "8443" ]]; then
-    print_info "Configuring custom ports in docker-compose.yml..."
-
-    # Check if yq is available for YAML manipulation
-    if ! command -v yq >/dev/null 2>&1; then
-        print_warning "yq not found, installing for docker-compose modification..."
-        if command -v curl >/dev/null 2>&1; then
-            YQ_VERSION="v4.40.5"
-            curl -L "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64" -o /tmp/yq
-            chmod +x /tmp/yq
-            YQ_CMD="/tmp/yq"
-        else
-            print_error "curl not available, cannot install yq"
-            print_warning "Using default ports"
-            YQ_CMD=""
-        fi
-    else
-        YQ_CMD="yq"
-    fi
-
-    if [[ -n "$YQ_CMD" ]] && [[ -f docker-compose.yml ]]; then
-        # Create a backup before modifying
-        cp docker-compose.yml docker-compose.yml.backup.$(date +%F-%H%M%S)
-        log "Created backup of docker-compose.yml"
-
-        # Update Kong port mappings
-        $YQ_CMD eval ".services.kong.ports = [\"${KONG_HTTP_PORT}:8000\", \"${KONG_HTTPS_BIND}\"]" -i docker-compose.yml 2>/dev/null || {
-            print_warning "Failed to update Kong ports in docker-compose.yml"
-        }
-
-        print_success "Kong ports configured in docker-compose.yml"
-    fi
-fi
-
-# Disable analytics service if not enabled
-if [[ "$ENABLE_ANALYTICS" != "y" ]]; then
-    print_info "Disabling analytics service..."
-
-    # Set up YQ_CMD if not already set
-    if [[ -z "$YQ_CMD" ]]; then
-        if ! command -v yq >/dev/null 2>&1; then
-            print_warning "yq not found, installing for docker-compose modification..."
-            if command -v curl >/dev/null 2>&1; then
-                YQ_VERSION="v4.40.5"
-                curl -L "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64" -o /tmp/yq
-                chmod +x /tmp/yq
-                YQ_CMD="/tmp/yq"
-            else
-                print_error "curl not available, cannot install yq"
-                print_warning "Analytics service will remain but may fail to start properly"
-                YQ_CMD=""
-            fi
-        else
-            YQ_CMD="yq"
-        fi
-    fi
-
-    if [[ -n "$YQ_CMD" ]] && [[ -f docker-compose.yml ]]; then
-        # Remove analytics service and its dependencies
-        $YQ_CMD eval 'del(.services.analytics)' -i docker-compose.yml 2>/dev/null || {
-            print_warning "Failed to remove analytics service from docker-compose.yml"
-        }
-
-        # Remove analytics from depends_on for other services
-        $YQ_CMD eval 'del(.services.[].depends_on.analytics)' -i docker-compose.yml 2>/dev/null || {
-            print_warning "Failed to remove analytics dependencies from docker-compose.yml"
-        }
-
-        print_success "Analytics service disabled in docker-compose.yml"
-    fi
-fi
 
 log "Docker compose override created"
 print_success "Override configured"
@@ -945,18 +816,6 @@ print_success "Override configured"
 print_step_header "◉" "DEPLOYING CONTAINERS"
 echo
 
-# Clean up any existing containers before starting new ones
-if command -v docker >/dev/null 2>&1 && [[ -f docker-compose.yml ]]; then
-    print_info "Cleaning up any existing Supabase containers..."
-    docker compose down 2>/dev/null || true
-    # Also clean up any orphaned containers
-    docker ps -a --filter "name=supabase" --format "{{.Names}}" 2>/dev/null | xargs -r docker rm -f 2>/dev/null || true
-    # Clean up any Docker networks that might be conflicting
-    docker network ls --filter "name=supabase" --format "{{.Name}}" 2>/dev/null | xargs -r docker network rm 2>/dev/null || true
-    # Force remove any containers that might be stuck
-    docker ps -a --filter "name=kong" --format "{{.Names}}" 2>/dev/null | xargs -r docker rm -f 2>/dev/null || true
-fi
-
 exec_with_spinner "Pulling container images (this may take a while)..." docker compose pull || {
     print_error "Failed to pull Docker images. Please check your internet connection and Docker installation."
     exit 1
@@ -964,20 +823,11 @@ exec_with_spinner "Pulling container images (this may take a while)..." docker c
 
 exec_with_spinner "Starting Supabase services..." docker compose up -d || {
     print_error "Failed to start Supabase services. Check Docker logs with: docker compose logs"
-    print_error ""
-    print_error "Common solutions for port conflicts:"
-    print_error "  1. Stop existing containers: docker compose down"
-    print_error "  2. Remove stuck containers: docker ps -a | grep supabase | awk '{print \$1}' | xargs docker rm -f"
-    print_error "  3. Clean up networks: docker system prune -f"
-    print_error "  4. Check what's using port 8000: netstat -tuln | grep :8000"
-    print_error "  5. Change Kong HTTP port: Re-run installer with Kong HTTP Port: 8001"
-    print_error ""
-    print_error "If Kong is failing but other services work, the issue is likely port 8000 conflict."
     exit 1
 }
 
 log "Containers deployed"
-print_success "All services deployed successfully"
+
 
 # Completion
 log "=== Installation completed successfully ==="
@@ -1018,10 +868,10 @@ print_config_line "VM IP Address" "$LOCAL_IP"
 echo
 
 printf "${C_WHITE}Next Steps:${C_RESET}\n"
-echo "  1) Configure Nginx Proxy Manager (NPM) to create two proxy hosts:"
+echo "  1) Configure reverse proxy (optional) for SSL termination:"
 echo "     • $API_URL → http://${LOCAL_IP}:${KONG_HTTP_PORT} (enable WebSockets)"
 echo "     • $SITE_URL → http://${LOCAL_IP}:3000"
-echo "  2) NPM will handle SSL certificates automatically (use Let's Encrypt)"
+echo "  2) Or access directly: http://${LOCAL_IP}:${KONG_HTTP_PORT} (API) / http://${LOCAL_IP}:3000 (Studio)"
 echo "  3) Test your API endpoint and visit Studio dashboard"
 echo
 

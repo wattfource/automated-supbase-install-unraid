@@ -9,7 +9,7 @@ Installs and configures the official Supabase self-hosted stack with:
 - Interactive configuration with sensible defaults
 - Storage integration with Unraid array (NFS or SMB)
 - Port security (localhost-only binding for sensitive services)
-- SSL termination via Nginx Proxy Manager
+- SSL-ready configuration for reverse proxy setup
 
 ## Architecture
 
@@ -29,10 +29,10 @@ Installs and configures the official Supabase self-hosted stack with:
 ║  ████████████████████████████████████████████████████████████████████████████    ║
 ║                                                                                  ║
 ║  NETWORK FLOW:                                                                   ║
-║  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐                          ║
-║  │   CLIENT    │───▶│     NPM     │───▶│     VM      │                          ║
-║  │             │    │ (SSL TERM)  │    │ (KONG:8000) │                          ║
-║  └─────────────┘    └─────────────┘    └─────────────┘                          ║
+║  ┌─────────────┐    ┌─────────────┐                                           ║
+║  │   CLIENT    │───▶│     VM      │                                           ║
+║  │             │    │ (KONG:8000) │                                           ║
+║  └─────────────┘    └─────────────┘                                           ║
 ╚══════════════════════════════════════════════════════════════════════════════════╝
 ```
 
@@ -44,6 +44,12 @@ Installs and configures the official Supabase self-hosted stack with:
 ## Installation
 
 This installer consists of **two steps**: prerequisites installation followed by Supabase deployment.
+
+**📁 Files included:**
+- `prerequisites-install.sh` - Installs Git, Docker, and Docker Compose
+- `supabase-install.sh` - Interactive Supabase configuration and deployment
+- `QUICK-START.md` - Quick reference guide
+- `README.md` - Complete documentation
 
 > **📋 Quick Reference**: See [QUICK-START.md](QUICK-START.md) for streamlined installation commands and troubleshooting tips.
 
@@ -58,9 +64,9 @@ This installer **automates** the official Supabase self-hosting process with sev
 
 **✅ Enhanced Features**
 - **Storage Integration**: Built-in Unraid NFS/SMB support
-- **Analytics Management**: Optional analytics with proper disabling
 - **Security Options**: Port pinning for sensitive services
 - **Domain Setup**: Automatic SSL-ready configuration
+- **Feature Management**: Interactive selection of optional services
 
 **🔄 Process Alignment**
 - Downloads official Supabase Docker stack (same as `git clone`)
@@ -71,7 +77,6 @@ This installer **automates** the official Supabase self-hosting process with sev
 **⚠️ Minor Deviations**
 - Different default values for some configurations (optimized for production)
 - Enhanced SMTP setup (Resend integration vs fake mail server)
-- Integrated analytics setup (vs separate configuration step)
 
 ### Core Process Alignment
 
@@ -148,7 +153,6 @@ chmod +x supabase-install.sh
 - ✅ Configures environment variables
 - ✅ Sets up storage mounts (NFS/SMB)
 - ✅ Deploys all containers
-- ✅ Port security (localhost binding for sensitive services)
 
 ### Step 4: Follow the Interactive Prompts
 The Supabase installer will guide you through:
@@ -156,10 +160,8 @@ The Supabase installer will guide you through:
 - Domain configuration (API & Studio)
 - SMTP email setup (optional)
 - Port configuration
-- Security options (port pinning for sensitive services)
+- Security options (port pinning)
 - Storage mount (NFS or SMB)
-
-**Note:** Analytics/Logs service (Logflare) provides logging functionality in Supabase Studio. It requires 2GB+ RAM and can be disabled to save resources. When disabled, you won't have access to logs in the Studio dashboard.
 
 ### Alternative: Combined Installation (Both Steps)
 
@@ -187,42 +189,24 @@ sudo bash -c 'cd /tmp && wget --no-cache -O prerequisites-install.sh https://raw
 SKIP_ANIMATION=1 ./supabase-install.sh
 ```
 
-**If you get port conflicts (address already in use):**
+**If you get Docker repository errors:**
 ```bash
-# 1. Check what's using the port
-netstat -tuln | grep :8000
-docker ps -a | grep kong
-
-# 2. Stop and clean up existing containers
-cd /srv/supabase
-docker compose down
-docker ps -a --filter "name=supabase" | xargs -r docker rm -f
-
-# 3. Clean up Docker networks and system
-docker system prune -f
-docker network prune -f
-
-# 4. Re-run the installer with different ports
-# Kong HTTP Port: 8001 (instead of 8000)
-# Kong HTTPS Port: 8444 (instead of 8443)
+# Manual cleanup (scripts do this automatically):
+sudo rm -f /etc/apt/sources.list.d/docker.list /etc/apt/keyrings/docker.gpg
+sudo apt update
+# Then run the prerequisites installer again
 ```
 
-**If you get permission denied errors with .env file:**
-```bash
-# Fix .env file permissions
-cd /srv/supabase
-sudo chmod 644 .env
-sudo chown $USER:$USER .env
-```
+### Step 5: Configure Reverse Proxy (Optional)
+For SSL termination and domain access, configure Nginx Proxy Manager or similar:
 
-### Step 5: Configure Nginx Proxy Manager
-After installation, create two proxy hosts:
-- `api.yourdomain.com` → `http://VM-IP:[KONG_HTTP_PORT]` (Enable WebSockets)
-- `studio.yourdomain.com` → `http://VM-IP:3000` (Add access restrictions)
+**Create two proxy hosts:**
+- `api.yourdomain.com` → `http://VM-IP:8000` (Enable WebSockets)
+- `studio.yourdomain.com` → `http://VM-IP:3000`
 
-Replace:
-- `VM-IP` with your VM's IP address (displayed at end of installation)
-- `[KONG_HTTP_PORT]` with the Kong HTTP port you chose (default: 8000)
+Replace `VM-IP` with your VM's IP address (displayed at end of installation)
+
+**Note:** Reverse proxy is optional - you can access services directly via IP:port
 
 ## Post-Installation
 

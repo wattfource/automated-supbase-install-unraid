@@ -43,7 +43,7 @@ chmod +x prerequisites-install.sh;
 
 ## Step 2: Supabase Installation
 
-Run the Supabase installer:
+Run the Supabase installer (includes interactive configuration):
 
 ```bash
 sudo bash -c '
@@ -58,10 +58,6 @@ chmod +x supabase-install.sh;
 This will:
 1. Run the interactive Supabase configuration wizard (with feature selection)
 2. Deploy the complete Supabase stack
-
-**Note:** During installation, you can choose to disable Analytics/Logs to save RAM (requires 2GB+ when enabled). Note that disabling analytics will remove logging functionality from Supabase Studio.
-
-**Security Options:** The installer includes port security by binding sensitive services to localhost only (recommended for production).
 
 ---
 
@@ -185,31 +181,6 @@ sudo apt update
 **Skip animation in Supabase installer:**
 ```bash
 SKIP_ANIMATION=1 ./supabase-install.sh
-```
-
-**If you get port conflicts:**
-```bash
-# 1. Check what's using the port
-netstat -tuln | grep :8000
-docker ps -a | grep kong
-
-# 2. Clean up existing Docker state
-cd /srv/supabase
-docker compose down
-docker ps -a --filter "name=supabase" | xargs -r docker rm -f
-docker system prune -f
-docker network prune -f
-
-# 3. Re-run with different ports
-# Kong HTTP Port: 8001 (instead of 8000)
-# Kong HTTPS Port: 8444 (instead of 8443)
-```
-
-**If you get permission denied with .env file:**
-```bash
-# Fix .env file permissions
-cd /srv/supabase
-sudo chmod 644 .env
 ```
 
 ---
