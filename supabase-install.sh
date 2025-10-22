@@ -176,14 +176,16 @@ validate_env_file() {
     local temp_file=".env.tmp"
 
     # Filter out malformed lines and keep only valid KEY=VALUE lines
-    # Also remove any example/template entries that start with placeholder text
+    # Remove any lines that don't follow proper KEY=VALUE format
+    # Remove template entries and empty lines
     grep -E '^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*[[:space:]]*=' .env | \
     grep -v "your-super-secret" | \
     grep -v "your-encryption-key" | \
     grep -v "your-tenant-id" | \
     grep -v "GOOGLE_PROJECT_ID" | \
     grep -v "GOOGLE_PROJECT_NUMBER" | \
-    grep -v "^[[:space:]]*$" > "$temp_file" 2>/dev/null || true
+    grep -v "^[[:space:]]*$" | \
+    grep -v '^[^=]*$' > "$temp_file" 2>/dev/null || true
 
     if [[ -s "$temp_file" ]]; then
         mv "$temp_file" .env
@@ -206,13 +208,14 @@ upsert_env() {
         sed -i "/^${k}=/d" .env 2>/dev/null || true
     fi
 
-    # Escape value for .env file - quote complex values to avoid docker-compose parsing issues
-    if [[ "$v" =~ ^[[:alnum:]_.-]*$ ]]; then
-        # Value contains only safe characters (alphanumeric, underscore, hyphen, dot)
-        echo "${k}=${v}" >> .env
+    # Escape value for .env file - quote values that could break docker-compose parsing
+    # Docker-compose treats unquoted values with / as variable separators
+    if [[ "$v" =~ / ]] || [[ "$v" =~ [[:space:]+=\$\"\'\\#{}()\[\]!@%^&*~`|:;] ]]; then
+        # Value contains characters that docker-compose might misinterpret - quote it
+        printf '%s="%s"\n' "$k" "$v" >> .env
     else
-        # Value contains special characters - quote it
-        echo "${k}=\"${v}\"" >> .env
+        # Value is safe to leave unquoted
+        echo "${k}=${v}" >> .env
     fi
     log "Set env: $k"
 }
@@ -604,7 +607,8 @@ if [[ ! -f docker-compose.yml ]]; then
         rm -rf /tmp/supabase || exit 1
         git clone --depth 1 https://github.com/supabase/supabase /tmp/supabase || exit 1
         cp -rf /tmp/supabase/docker/* /srv/supabase/ || exit 1
-        cp /tmp/supabase/docker/.env.example /srv/supabase/.env 2>/dev/null || touch /srv/supabase/.env || exit 1
+        # Create a clean .env file instead of copying .env.example (which contains template entries)
+        touch /srv/supabase/.env || exit 1
         rm -rf /tmp/supabase || exit 1
     " || {
         print_error "Failed to download Supabase bundle. Please check your internet connection."
