@@ -158,7 +158,8 @@ require_root() {
     }
 }
 
-gen_b64() { openssl rand -base64 "$1" 2>>"$LOGFILE"; }
+# Generate URL-safe base64 (no /, +, or = characters that break URLs)
+gen_b64() { openssl rand -base64 "$1" 2>>"$LOGFILE" | tr '+/' '-_' | tr -d '='; }
 b64url() { openssl enc -base64 -A | tr '+/' '-_' | tr -d '='; }
 
 gen_jwt_for_role() {
@@ -175,14 +176,8 @@ gen_jwt_for_role() {
 
 upsert_env() {
     local k="$1" v="$2"
-
-    # Quote values that could break docker-compose parsing
-    # Docker-compose treats unquoted values with special characters as variable separators
-    if [[ "$v" =~ [/\$\`\"\'\\] ]]; then
-        printf '%s="%s"\n' "$k" "$v" >> .env
-    else
-        echo "${k}=${v}" >> .env
-    fi
+    # All secrets are now URL-safe, so we can write them directly
+    echo "${k}=${v}" >> .env
     log "Set env: $k"
 }
 
