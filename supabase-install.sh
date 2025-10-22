@@ -865,7 +865,32 @@ exec_with_spinner "Pulling container images (this may take a while)..." docker c
     exit 1
 }
 
-exec_with_spinner "Starting Supabase services..." docker compose up -d || {
+# Clean up any existing containers to avoid conflicts
+print_info "Cleaning up any existing Supabase containers..."
+docker compose down 2>/dev/null || true
+
+# Start services in correct order - database first, then others
+print_info "Starting database service..."
+docker compose up -d db || {
+    print_error "Failed to start database service"
+    exit 1
+}
+
+# Wait for database to be ready
+print_info "Waiting for database to be healthy..."
+for i in {1..30}; do
+    if docker compose ps db | grep -q "healthy"; then
+        break
+    fi
+    sleep 2
+done
+
+if ! docker compose ps db | grep -q "healthy"; then
+    print_warning "Database may not be fully ready, but continuing..."
+fi
+
+# Start remaining services
+exec_with_spinner "Starting remaining Supabase services..." docker compose up -d || {
     print_error "Failed to start Supabase services. Check Docker logs with: docker compose logs"
     exit 1
 }
