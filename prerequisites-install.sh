@@ -111,36 +111,6 @@ require_root() {
     }
 }
 
-# Clean up broken Docker configurations from previous failed installations
-cleanup_docker_config() {
-    local cleaned=0
-    
-    # Check for broken Docker repository (repository exists but GPG key doesn't)
-    if [[ -f /etc/apt/sources.list.d/docker.list ]] && [[ ! -f /etc/apt/keyrings/docker.gpg ]]; then
-        log "Detected broken Docker repository configuration from previous attempt"
-        print_warning "Cleaning up broken Docker repository configuration..."
-        rm -f /etc/apt/sources.list.d/docker.list 2>/dev/null || true
-        cleaned=1
-    fi
-    
-    # Check for orphaned Docker keyring directory
-    if [[ -d /etc/apt/keyrings ]] && [[ ! -f /etc/apt/keyrings/docker.gpg ]]; then
-        # Remove only if it's empty or contains broken Docker keys
-        if [[ -z "$(ls -A /etc/apt/keyrings 2>/dev/null)" ]]; then
-            rmdir /etc/apt/keyrings 2>/dev/null || true
-        fi
-    fi
-    
-    # If we cleaned anything, update apt cache
-    if [[ $cleaned -eq 1 ]]; then
-        log "Running apt update to refresh package lists..."
-        apt update >> "$LOGFILE" 2>&1 || {
-            log "Warning: apt update failed, but continuing anyway"
-        }
-        print_success "Cleanup complete"
-    fi
-}
-
 #==============================================================================
 # MAIN INSTALLATION
 #==============================================================================
@@ -153,12 +123,8 @@ log "Working Directory: $(pwd)"
 require_root
 print_header
 
-# Clean up any broken configurations
-cleanup_docker_config
-
 # Update package lists
-print_info "Updating package lists..."
-exec_with_spinner "Running apt update..." apt update || {
+exec_with_spinner "Updating package lists..." apt update || {
     print_error "Failed to update package lists"
     exit 1
 }
@@ -167,98 +133,52 @@ exec_with_spinner "Running apt update..." apt update || {
 printf "\n${C_WHITE}Installing Basic Tools${C_RESET}\n"
 echo
 
-for cmd in curl gpg jq openssl git; do
-    if ! command -v $cmd >/dev/null 2>&1; then
-        exec_with_spinner "Installing $cmd..." apt install -y $cmd || {
-            print_error "Failed to install $cmd"
-            exit 1
-        }
-    else
-        print_success "$cmd already installed"
-    fi
-done
+exec_with_spinner "Installing system tools..." apt install -y curl gpg jq openssl git || {
+    print_error "Failed to install system tools"
+    exit 1
+}
+print_success "System tools installed"
 
 # Install Docker
 printf "\n${C_WHITE}Installing Docker Engine${C_RESET}\n"
 echo
 
-if ! command -v docker >/dev/null 2>&1; then
-    print_info "Installing Docker Engine..."
-    
-    exec_with_spinner "Adding Docker repository..." bash -c '
-        set -euo pipefail
-        install -m 0755 -d /etc/apt/keyrings || exit 1
-        curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg || exit 1
-        chmod a+r /etc/apt/keyrings/docker.gpg || exit 1
-        . /etc/os-release || exit 1
-        echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian $VERSION_CODENAME stable" > /etc/apt/sources.list.d/docker.list || exit 1
-        apt update || exit 1
-    ' || {
-        print_error "Failed to add Docker repository. Please check your internet connection."
-        exit 1
-    }
-    
-    exec_with_spinner "Installing Docker packages..." bash -c '
-        set -euo pipefail
-        apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin || exit 1
-    ' || {
-        print_error "Docker installation failed."
-        print_error "You may need to install Docker manually: https://docs.docker.com/engine/install/debian/"
-        exit 1
-    }
-    
-    exec_with_spinner "Enabling Docker service..." systemctl enable --now docker || {
-        print_error "Failed to start Docker service"
-        exit 1
-    }
-    
-    print_success "Docker Engine installed successfully"
-else
-    print_success "Docker already installed"
-    
-    # Verify Docker Compose plugin is installed
-    if ! docker compose version >/dev/null 2>&1; then
-        print_warning "Docker Compose plugin not found, installing..."
-        exec_with_spinner "Installing Docker Compose plugin..." apt install -y docker-compose-plugin || {
-            print_error "Failed to install Docker Compose plugin"
-            exit 1
-        }
-    else
-        print_success "Docker Compose already installed"
-    fi
-fi
+exec_with_spinner "Adding Docker repository..." bash -c '
+    set -euo pipefail
+    install -m 0755 -d /etc/apt/keyrings
+    curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+    chmod a+r /etc/apt/keyrings/docker.gpg
+    . /etc/os-release
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian $VERSION_CODENAME stable" > /etc/apt/sources.list.d/docker.list
+    apt update
+' || {
+    print_error "Failed to add Docker repository"
+    exit 1
+}
 
-# Verify installations and compatibility
-printf "\n${C_WHITE}Verifying Installations & Compatibility${C_RESET}\n"
+exec_with_spinner "Installing Docker packages..." apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin || {
+    print_error "Docker installation failed"
+    exit 1
+}
+
+exec_with_spinner "Starting Docker service..." systemctl enable --now docker || {
+    print_error "Failed to start Docker service"
+    exit 1
+}
+
+print_success "Docker Engine installed"
+
+# Verify installations
+printf "\n${C_WHITE}Verifying Installations${C_RESET}\n"
 echo
 
-# Get versions
 GIT_VERSION=$(git --version | grep -oP '\d+\.\d+\.\d+' | head -1)
 DOCKER_VERSION=$(docker --version | grep -oP '\d+\.\d+\.\d+' | head -1)
 COMPOSE_VERSION=$(docker compose version | grep -oP '\d+\.\d+\.\d+' | head -1)
 
-print_info "Git version: $GIT_VERSION"
-print_info "Docker version: $DOCKER_VERSION"
-print_info "Docker Compose version: $COMPOSE_VERSION"
-
-# Verify Docker Compose v2 format (plugin-based)
-if docker compose version >/dev/null 2>&1; then
-    print_success "Docker Compose v2 (plugin) verified"
-else
-    print_error "Docker Compose plugin not working correctly"
-    exit 1
-fi
-
-# Test Docker daemon
-if docker ps >/dev/null 2>&1; then
-    print_success "Docker daemon running"
-else
-    print_warning "Docker daemon may not be running. Starting..."
-    systemctl start docker || {
-        print_error "Failed to start Docker daemon"
-        exit 1
-    }
-fi
+print_success "Git v${GIT_VERSION}"
+print_success "Docker v${DOCKER_VERSION}"
+print_success "Docker Compose v${COMPOSE_VERSION}"
 
 # Completion
 log "=== Prerequisites installation completed successfully ==="

@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 # ============================================================================
-# WATTFOURCE SUPABASE INSTALLER
+# WATTFOURCE SUPABASE INSTALLER (PHASE 2)
+# 
+# This script configures and deploys Supabase services.
+# Prerequisites (Git, Docker, Docker Compose) must be installed first.
+# 
+# Installation is a two-phase process:
+#   Phase 1: Run prerequisites-install.sh (installs Docker, Git, etc.)
+#   Phase 2: Run this script (configures and deploys Supabase)
 # ============================================================================
 set -euo pipefail
 
@@ -30,7 +37,7 @@ animate_light_cycle_intro() { :; }
 
 print_header() {
     clear
-    printf "${C_CYAN}WATTFOURCE${C_RESET} — Supabase Local Setup Configuration Wizard\n"
+    printf "${C_CYAN}WATTFOURCE${C_RESET} — Supabase Installation (Phase 2)\n"
     printf "Log: %s\n\n" "$LOGFILE"
 }
 
@@ -166,55 +173,14 @@ gen_jwt_for_role() {
   printf '%s.%s.%s\n' "$hb" "$pb" "$sig"
 }
 
-# Function to validate and clean .env file
-validate_env_file() {
-    if [[ ! -f .env ]]; then
-        return 0
-    fi
-
-    log "Validating .env file format..."
-    local temp_file=".env.tmp"
-
-    # Filter out malformed lines and keep only valid KEY=VALUE lines
-    # Remove any lines that don't follow proper KEY=VALUE format
-    # Remove template entries and empty lines
-    grep -E '^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*[[:space:]]*=' .env | \
-    grep -v "your-super-secret" | \
-    grep -v "your-encryption-key" | \
-    grep -v "your-tenant-id" | \
-    grep -v "GOOGLE_PROJECT_ID" | \
-    grep -v "GOOGLE_PROJECT_NUMBER" | \
-    grep -v "^[[:space:]]*$" | \
-    grep -v '^[^=]*$' > "$temp_file" 2>/dev/null || true
-
-    if [[ -s "$temp_file" ]]; then
-        mv "$temp_file" .env
-        log "Cleaned malformed and template entries from .env file"
-    else
-        rm -f "$temp_file"
-        log "Warning: .env file appears to be corrupted, recreating..."
-        > .env
-    fi
-}
-
 upsert_env() {
     local k="$1" v="$2"
 
-    # Ensure .env file is clean before writing
-    validate_env_file
-
-    # Remove existing line for this key if it exists
-    if [[ -f .env ]] && grep -q "^${k}=" .env 2>/dev/null; then
-        sed -i "/^${k}=/d" .env 2>/dev/null || true
-    fi
-
-    # Escape value for .env file - quote values that could break docker-compose parsing
-    # Docker-compose treats unquoted values with / as variable separators
+    # Quote values that could break docker-compose parsing
+    # Docker-compose treats unquoted values with special characters as variable separators
     if [[ "$v" =~ [/\$\`\"\'\\] ]]; then
-        # Value contains characters that docker-compose might misinterpret - quote it
         printf '%s="%s"\n' "$k" "$v" >> .env
     else
-        # Value is safe to leave unquoted
         echo "${k}=${v}" >> .env
     fi
     log "Set env: $k"
@@ -236,64 +202,6 @@ log "User: $(whoami)"
 log "Working Directory: $(pwd)"
 
 require_root
-
-# Clean up broken configurations from previous failed installations
-cleanup_previous_attempts() {
-    local cleaned=0
-    
-    # Check for broken Docker repository (repository exists but GPG key doesn't)
-    if [[ -f /etc/apt/sources.list.d/docker.list ]] && [[ ! -f /etc/apt/keyrings/docker.gpg ]]; then
-        log "Detected broken Docker repository configuration from previous attempt"
-        print_warning "Cleaning up broken Docker repository configuration..."
-        rm -f /etc/apt/sources.list.d/docker.list 2>/dev/null || true
-        cleaned=1
-    fi
-    
-    # Check for orphaned Docker keyring directory
-    if [[ -d /etc/apt/keyrings ]] && [[ ! -f /etc/apt/keyrings/docker.gpg ]]; then
-        # Remove only if it's empty or contains broken Docker keys
-        if [[ -z "$(ls -A /etc/apt/keyrings 2>/dev/null)" ]]; then
-            rmdir /etc/apt/keyrings 2>/dev/null || true
-        fi
-    fi
-    
-    # Clean up any partial Supabase installations
-    if [[ -d "/srv/supabase" ]] && [[ ! -f "/srv/supabase/docker-compose.yml" ]]; then
-        log "Detected incomplete Supabase installation directory"
-        print_warning "Cleaning up incomplete Supabase installation..."
-        rm -rf /srv/supabase 2>/dev/null || true
-        cleaned=1
-    fi
-    
-    # Clean up any orphaned Docker containers from previous attempts
-    if command -v docker >/dev/null 2>&1; then
-        local orphaned_containers=$(docker ps -a --filter "name=supabase" --format "{{.Names}}" 2>/dev/null || true)
-        if [[ -n "$orphaned_containers" ]]; then
-            log "Found orphaned Supabase containers from previous attempts"
-            print_warning "Cleaning up orphaned Docker containers..."
-            docker stop $(echo "$orphaned_containers") 2>/dev/null || true
-            docker rm $(echo "$orphaned_containers") 2>/dev/null || true
-            cleaned=1
-        fi
-    fi
-    
-    # If we cleaned anything, update apt cache
-    if [[ $cleaned -eq 1 ]]; then
-        log "Running apt update to refresh package lists..."
-        apt update >> "$LOGFILE" 2>&1 || {
-            log "Warning: apt update failed, but continuing anyway"
-        }
-        print_success "Cleanup complete"
-    fi
-}
-
-# Clean up any broken configurations from previous failed installations
-cleanup_previous_attempts
-
-# Show epic light cycle animation intro (set SKIP_ANIMATION=1 to disable)
-if [[ "${SKIP_ANIMATION:-0}" != "1" ]]; then
-    animate_light_cycle_intro
-fi
 
 clear_screen
 print_header
@@ -543,57 +451,47 @@ log "Configuration confirmed, proceeding with installation"
 clear_screen
 print_header
 
-# Install dependencies
-print_step_header "◉" "INSTALLING DEPENDENCIES"
+# Verify prerequisites are installed
+print_step_header "◉" "VERIFYING PREREQUISITES"
 echo
 
-# Install basic tools first (needed for Docker installation)
-print_info "Installing prerequisite packages..."
-for cmd in curl gpg jq openssl git; do
-    if ! command -v $cmd >/dev/null; then
-        exec_with_spinner "Installing $cmd..." apt install -y $cmd || {
-            print_error "Failed to install $cmd"
-            exit 1
-        }
+print_info "Checking required tools..."
+
+# Check for required commands
+MISSING_DEPS=()
+for cmd in curl gpg jq openssl git docker; do
+    if ! command -v $cmd >/dev/null 2>&1; then
+        MISSING_DEPS+=("$cmd")
+        print_error "$cmd is not installed"
     else
-        print_success "$cmd already installed"
+        print_success "$cmd is available"
     fi
 done
 
-# Now install Docker (which requires curl and gpg)
-if ! command -v docker >/dev/null; then
-    print_info "Installing Docker Engine..."
-    exec_with_spinner "Adding Docker repository..." bash -c '
-        set -euo pipefail
-        install -m 0755 -d /etc/apt/keyrings || exit 1
-        curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg || exit 1
-        chmod a+r /etc/apt/keyrings/docker.gpg || exit 1
-        . /etc/os-release || exit 1
-        echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian $VERSION_CODENAME stable" > /etc/apt/sources.list.d/docker.list || exit 1
-        apt update || exit 1
-    ' || {
-        print_error "Failed to add Docker repository. Please check your internet connection."
-        exit 1
-    }
-    
-    exec_with_spinner "Installing Docker packages..." bash -c '
-        set -euo pipefail
-        apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin || exit 1
-    ' || {
-        print_error "Docker installation failed."
-        print_error "You may need to install Docker manually: https://docs.docker.com/engine/install/debian/"
-        exit 1
-    }
-    
-    exec_with_spinner "Enabling Docker service..." systemctl enable --now docker || {
-        print_error "Failed to start Docker service"
-        exit 1
-    }
-    
-    print_success "Docker Engine installed successfully"
+# Check for Docker Compose plugin
+if ! docker compose version >/dev/null 2>&1; then
+    MISSING_DEPS+=("docker-compose-plugin")
+    print_error "Docker Compose plugin is not installed"
 else
-    print_success "Docker already installed"
+    print_success "Docker Compose is available"
 fi
+
+# If any dependencies are missing, provide helpful error message
+if [[ ${#MISSING_DEPS[@]} -gt 0 ]]; then
+    echo
+    print_error "Missing required prerequisites: ${MISSING_DEPS[*]}"
+    echo
+    printf "${C_YELLOW}Please run the prerequisites installer first:${C_RESET}\n"
+    printf "${C_CYAN}sudo bash prerequisites-install.sh${C_RESET}\n"
+    echo
+    printf "${C_YELLOW}Or download and run it directly:${C_RESET}\n"
+    printf "${C_CYAN}sudo bash -c 'cd /tmp && wget --no-cache -O prerequisites-install.sh https://raw.githubusercontent.com/wattfource/automated-supbase-install-unraid/main/prerequisites-install.sh && chmod +x prerequisites-install.sh && ./prerequisites-install.sh'${C_RESET}\n"
+    echo
+    log "Installation aborted: missing prerequisites - ${MISSING_DEPS[*]}"
+    exit 1
+fi
+
+print_success "All prerequisites verified"
 
 # Setup directory
 print_step_header "◉" "SETTING UP DIRECTORY"
@@ -611,28 +509,17 @@ cd "$ROOT" || {
 log "Changed directory to $ROOT"
 
 # Download Supabase
-if [[ ! -f docker-compose.yml ]]; then
-    exec_with_spinner "Fetching Supabase docker bundle..." bash -c "
-        set -euo pipefail
-        rm -rf /tmp/supabase || exit 1
-        git clone --depth 1 https://github.com/supabase/supabase /tmp/supabase || exit 1
-        cp -rf /tmp/supabase/docker/* /srv/supabase/ || exit 1
-        # Create a clean .env file instead of copying .env.example (which contains template entries)
-        touch /srv/supabase/.env || exit 1
-        rm -rf /tmp/supabase || exit 1
-    " || {
-        print_error "Failed to download Supabase bundle. Please check your internet connection."
-        exit 1
-    }
-else
-    print_success "Supabase bundle already exists"
-fi
-
-# Backup existing env
-if [[ -f .env ]]; then
-cp -a .env ".env.bak.$(date +%F-%H%M%S)"
-    log "Backed up existing .env file"
-fi
+exec_with_spinner "Fetching Supabase docker bundle..." bash -c "
+    set -euo pipefail
+    git clone --depth 1 https://github.com/supabase/supabase /tmp/supabase || exit 1
+    cp -rf /tmp/supabase/docker/* /srv/supabase/ || exit 1
+    # Create a clean .env file
+    touch /srv/supabase/.env || exit 1
+    rm -rf /tmp/supabase || exit 1
+" || {
+    print_error "Failed to download Supabase bundle. Please check your internet connection."
+    exit 1
+}
 
 # Generate JWT keys
 print_step_header "◉" "GENERATING JWT KEYS"
@@ -650,9 +537,6 @@ print_success "JWT keys generated"
 # Configure environment
 print_step_header "◉" "CONFIGURING ENVIRONMENT"
 echo
-
-print_info "Validating and cleaning .env file..."
-validate_env_file
 
 print_info "Writing environment variables..."
 
@@ -861,41 +745,34 @@ print_step_header "◉" "DEPLOYING CONTAINERS"
 echo
 
 exec_with_spinner "Pulling container images (this may take a while)..." docker compose pull || {
-    print_error "Failed to pull Docker images. Please check your internet connection and Docker installation."
+    print_error "Failed to pull Docker images. Please check your internet connection."
     exit 1
 }
 
-# Clean up any existing containers to avoid conflicts
-print_info "Cleaning up any existing Supabase containers..."
-docker compose down 2>/dev/null || true
-
-# Start services in correct order - database first, then others
+# Start database first
 print_info "Starting database service..."
 docker compose up -d db || {
     print_error "Failed to start database service"
     exit 1
 }
 
-# Wait for database to be ready
-print_info "Waiting for database to be healthy..."
+# Wait for database to be healthy
+print_info "Waiting for database to be ready..."
 for i in {1..30}; do
     if docker compose ps db | grep -q "healthy"; then
+        print_success "Database is healthy"
         break
     fi
     sleep 2
 done
 
-if ! docker compose ps db | grep -q "healthy"; then
-    print_warning "Database may not be fully ready, but continuing..."
-fi
-
-# Start remaining services
-exec_with_spinner "Starting remaining Supabase services..." docker compose up -d || {
-    print_error "Failed to start Supabase services. Check Docker logs with: docker compose logs"
+# Start all remaining services
+exec_with_spinner "Starting all Supabase services..." docker compose up -d || {
+    print_error "Failed to start Supabase services"
     exit 1
 }
 
-log "Containers deployed"
+log "Containers deployed successfully"
 
 
 # Completion
