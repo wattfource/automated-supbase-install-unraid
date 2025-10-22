@@ -754,6 +754,14 @@ upsert_env DOCKER_SOCKET_LOCATION "/var/run/docker.sock"
 upsert_env FILE_SIZE_LIMIT "524288000"
 
 chmod 600 .env
+# Ensure .env file is readable by docker-compose
+if [[ -f .env ]]; then
+    # Fix permissions if needed
+    if ! docker compose config --quiet 2>/dev/null; then
+        print_warning ".env file may have permission issues, fixing..."
+        chmod 644 .env
+    fi
+fi
 log "Environment file configured and secured"
 print_success "Environment configured"
 
@@ -943,6 +951,10 @@ if command -v docker >/dev/null 2>&1 && [[ -f docker-compose.yml ]]; then
     docker compose down 2>/dev/null || true
     # Also clean up any orphaned containers
     docker ps -a --filter "name=supabase" --format "{{.Names}}" 2>/dev/null | xargs -r docker rm -f 2>/dev/null || true
+    # Clean up any Docker networks that might be conflicting
+    docker network ls --filter "name=supabase" --format "{{.Name}}" 2>/dev/null | xargs -r docker network rm 2>/dev/null || true
+    # Force remove any containers that might be stuck
+    docker ps -a --filter "name=kong" --format "{{.Names}}" 2>/dev/null | xargs -r docker rm -f 2>/dev/null || true
 fi
 
 exec_with_spinner "Pulling container images (this may take a while)..." docker compose pull || {
@@ -952,10 +964,15 @@ exec_with_spinner "Pulling container images (this may take a while)..." docker c
 
 exec_with_spinner "Starting Supabase services..." docker compose up -d || {
     print_error "Failed to start Supabase services. Check Docker logs with: docker compose logs"
-    print_error "If you see port conflicts, try:"
-    print_error "  1. docker compose down (stop all containers)"
-    print_error "  2. docker system prune (clean up networks)"
-    print_error "  3. Change Kong HTTP port to 8001"
+    print_error ""
+    print_error "Common solutions for port conflicts:"
+    print_error "  1. Stop existing containers: docker compose down"
+    print_error "  2. Remove stuck containers: docker ps -a | grep supabase | awk '{print \$1}' | xargs docker rm -f"
+    print_error "  3. Clean up networks: docker system prune -f"
+    print_error "  4. Check what's using port 8000: netstat -tuln | grep :8000"
+    print_error "  5. Change Kong HTTP port: Re-run installer with Kong HTTP Port: 8001"
+    print_error ""
+    print_error "If Kong is failing but other services work, the issue is likely port 8000 conflict."
     exit 1
 }
 

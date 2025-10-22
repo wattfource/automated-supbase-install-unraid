@@ -189,17 +189,30 @@ SKIP_ANIMATION=1 ./supabase-install.sh
 
 **If you get port conflicts (address already in use):**
 ```bash
-# Stop any existing Supabase containers
+# 1. Check what's using the port
+netstat -tuln | grep :8000
+docker ps -a | grep kong
+
+# 2. Stop and clean up existing containers
 cd /srv/supabase
 docker compose down
-
-# Clean up Docker networks and containers
-docker system prune -f
 docker ps -a --filter "name=supabase" | xargs -r docker rm -f
 
-# Re-run the installer with different ports
+# 3. Clean up Docker networks and system
+docker system prune -f
+docker network prune -f
+
+# 4. Re-run the installer with different ports
 # Kong HTTP Port: 8001 (instead of 8000)
 # Kong HTTPS Port: 8444 (instead of 8443)
+```
+
+**If you get permission denied errors with .env file:**
+```bash
+# Fix .env file permissions
+cd /srv/supabase
+sudo chmod 644 .env
+sudo chown $USER:$USER .env
 ```
 
 ### Step 5: Configure Nginx Proxy Manager
