@@ -176,11 +176,18 @@ validate_env_file() {
     local temp_file=".env.tmp"
 
     # Filter out malformed lines and keep only valid KEY=VALUE lines
-    grep -E '^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*[[:space:]]*=' .env > "$temp_file" 2>/dev/null || true
+    # Also remove any example/template entries that start with placeholder text
+    grep -E '^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*[[:space:]]*=' .env | \
+    grep -v "your-super-secret" | \
+    grep -v "your-encryption-key" | \
+    grep -v "your-tenant-id" | \
+    grep -v "GOOGLE_PROJECT_ID" | \
+    grep -v "GOOGLE_PROJECT_NUMBER" | \
+    grep -v "^[[:space:]]*$" > "$temp_file" 2>/dev/null || true
 
     if [[ -s "$temp_file" ]]; then
         mv "$temp_file" .env
-        log "Cleaned malformed entries from .env file"
+        log "Cleaned malformed and template entries from .env file"
     else
         rm -f "$temp_file"
         log "Warning: .env file appears to be corrupted, recreating..."
@@ -199,11 +206,13 @@ upsert_env() {
         sed -i "/^${k}=/d" .env 2>/dev/null || true
     fi
 
-    # Escape value for .env file - wrap in quotes if contains special characters
-    if [[ "$v" =~ [[:space:]+=\$\"\'\\] ]]; then
-        echo "${k}=\"${v}\"" >> .env
-    else
+    # Escape value for .env file - quote complex values to avoid docker-compose parsing issues
+    if [[ "$v" =~ ^[[:alnum:]_.-]*$ ]]; then
+        # Value contains only safe characters (alphanumeric, underscore, hyphen, dot)
         echo "${k}=${v}" >> .env
+    else
+        # Value contains special characters - quote it
+        echo "${k}=\"${v}\"" >> .env
     fi
     log "Set env: $k"
 }
