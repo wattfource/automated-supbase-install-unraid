@@ -161,12 +161,32 @@ exec_with_spinner "Installing Docker packages..." apt install -y docker-ce docke
     exit 1
 }
 
-exec_with_spinner "Starting Docker service..." systemctl enable --now docker || {
+exec_with_spinner "Enabling Docker service..." systemctl enable docker || {
+    print_error "Failed to enable Docker service"
+    exit 1
+}
+
+exec_with_spinner "Starting Docker service..." systemctl start docker || {
     print_error "Failed to start Docker service"
     exit 1
 }
 
-print_success "Docker Engine installed"
+# Wait for Docker daemon to be fully ready
+print_info "Waiting for Docker daemon to be ready..."
+for i in {1..30}; do
+    if docker info >/dev/null 2>&1; then
+        print_success "Docker daemon is ready"
+        break
+    fi
+    if [ $i -eq 30 ]; then
+        print_error "Docker daemon did not become ready in time"
+        print_info "Try running: sudo systemctl status docker"
+        exit 1
+    fi
+    sleep 1
+done
+
+print_success "Docker Engine installed and running"
 
 # Verify installations
 printf "\n${C_WHITE}Verifying Installations${C_RESET}\n"

@@ -381,12 +381,9 @@ else
     VM_MOUNT=""
 fi
 
-# Firewall config
-print_step_header "9" "SECURITY CONFIG"
-echo
-
-PIN_HTTPS_LOOPBACK=$(ask_yn "Pin Kong HTTPS 8443 to localhost (recommended)" "y")
-PIN_POOLER_LOOPBACK=$(ask_yn "Pin Supavisor 5432/6543 to localhost (recommended)" "y")
+# Network config - make all services accessible from network
+PIN_HTTPS_LOOPBACK="n"
+PIN_POOLER_LOOPBACK="n"
 
 # Configuration Summary
 clear_screen
@@ -426,9 +423,12 @@ if [[ "$ENABLE_STORAGE" = "y" ]]; then
     echo
 fi
 
-printf "${C_WHITE}Security:${C_RESET}\n"
-print_config_line "HTTPS Pinned" "$([[ "$PIN_HTTPS_LOOPBACK" = "y" ]] && echo "127.0.0.1:8443" || echo "0.0.0.0:8443")"
-print_config_line "Pooler Pinned" "$([[ "$PIN_POOLER_LOOPBACK" = "y" ]] && echo "127.0.0.1:5432/6543" || echo "Network accessible")"
+printf "${C_WHITE}Network Access:${C_RESET}\n"
+print_config_line "All Ports" "Network accessible (0.0.0.0)"
+print_config_line "Kong HTTP" "0.0.0.0:${KONG_HTTP_PORT}"
+print_config_line "Kong HTTPS" "0.0.0.0:${KONG_HTTPS_PORT}"
+print_config_line "Supavisor Pooler" "0.0.0.0:6543"
+print_config_line "Studio Dashboard" "0.0.0.0:3000"
 echo
 
 if [[ $(ask_yn "Proceed with installation?" "y") = "n" ]]; then
@@ -487,6 +487,26 @@ if [[ ${#MISSING_DEPS[@]} -gt 0 ]]; then
 fi
 
 print_success "All prerequisites verified"
+
+# Check Docker service health
+print_step_header "◉" "VERIFYING DOCKER SERVICE"
+echo
+
+if ! systemctl is-active --quiet docker; then
+    print_warning "Docker service is not running"
+    if [[ $(ask_yn "Start Docker service?" "y") = "y" ]]; then
+        exec_with_spinner "Starting Docker service..." systemctl start docker || {
+            print_error "Failed to start Docker service"
+            exit 1
+        }
+        sleep 3
+    else
+        print_error "Docker service must be running"
+        exit 1
+    fi
+fi
+
+print_success "Docker service is healthy"
 
 # Setup directory
 print_step_header "◉" "SETTING UP DIRECTORY"
@@ -668,45 +688,18 @@ fi
 # Create docker-compose override
 print_info "Creating docker-compose override..."
 
-# Determine port bindings based on pinning preferences
-
-
-# Create docker-compose override for security and feature configuration
+# Create docker-compose override for feature configuration and security
 cat > docker-compose.override.yml <<YAML
 services:
 YAML
 
-# Build Kong port configuration (must be a single service entry)
-KONG_NEEDS_OVERRIDE=false
-KONG_HTTP_BIND="${KONG_HTTP_PORT}:8000"
-KONG_HTTPS_BIND="0.0.0.0:${KONG_HTTPS_PORT}:8443"
-
-# Check if we need to override Kong defaults
-if [[ "$KONG_HTTP_PORT" != "8000" ]]; then
-    KONG_NEEDS_OVERRIDE=true
-fi
-
-if [[ "$PIN_HTTPS_LOOPBACK" = "y" ]]; then
-    KONG_HTTPS_BIND="127.0.0.1:${KONG_HTTPS_PORT}:8443"
-    KONG_NEEDS_OVERRIDE=true
-fi
-
-# Write Kong service configuration once with all port bindings
-if [[ "$KONG_NEEDS_OVERRIDE" = "true" ]]; then
+# Kong port configuration (only override if using non-default ports)
+if [[ "$KONG_HTTP_PORT" != "8000" ]] || [[ "$KONG_HTTPS_PORT" != "8443" ]]; then
     cat >> docker-compose.override.yml <<YAML
   kong:
     ports:
-      - "${KONG_HTTP_BIND}"
-      - "${KONG_HTTPS_BIND}"
-YAML
-fi
-
-# Supavisor port override (only if pinning to localhost)
-if [[ "$PIN_POOLER_LOOPBACK" = "y" ]]; then
-    cat >> docker-compose.override.yml <<YAML
-  supavisor:
-    ports:
-      - "127.0.0.1:6543:6543"
+      - "${KONG_HTTP_PORT}:8000"
+      - "${KONG_HTTPS_PORT}:8443"
 YAML
 fi
 
@@ -768,6 +761,27 @@ if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -q '^supabase-'; then
                 print_error "Failed to remove containers"
                 exit 1
             }
+        fi
+        
+        # Clean up Docker networks (prevents stale iptables rules)
+        print_info "Cleaning up Docker networks..."
+        docker network prune -f >> "$LOGFILE" 2>&1 || true
+        
+        # Restart Docker daemon to clear stale port bindings
+        print_warning "Docker networking cleanup required"
+        if [[ $(ask_yn "Restart Docker service to clear port bindings?" "y") = "y" ]]; then
+            exec_with_spinner "Restarting Docker service..." systemctl restart docker || {
+                print_warning "Could not restart Docker automatically"
+                print_info "Please run: sudo systemctl restart docker"
+                print_info "Then re-run this installer"
+                exit 1
+            }
+            # Wait for Docker to fully restart
+            sleep 5
+            print_success "Docker service restarted"
+        else
+            print_warning "Skipping Docker restart - you may encounter port binding issues"
+            print_info "If installation fails, manually run: sudo systemctl restart docker"
         fi
         
         print_success "All existing containers removed"
@@ -842,11 +856,45 @@ print_success "All images downloaded"
 print_step_header "◉" "STARTING SUPABASE SERVICES"
 echo
 
-exec_with_spinner "Starting containers..." docker compose up -d || {
-    print_error "Failed to start Supabase services"
-    print_info "Try running: cd /srv/supabase && docker compose logs"
-    exit 1
-}
+# Try starting containers with retry logic (Docker networking can be flaky)
+MAX_RETRIES=3
+RETRY_COUNT=0
+while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+    print_info "Starting containers (attempt $((RETRY_COUNT + 1))/$MAX_RETRIES)..."
+    
+    set +e  # Don't exit on error
+    docker compose up -d >> "$LOGFILE" 2>&1
+    DOCKER_EXIT_CODE=$?
+    set -e
+    
+    if [ $DOCKER_EXIT_CODE -eq 0 ]; then
+        print_success "Containers started successfully"
+        break
+    else
+        RETRY_COUNT=$((RETRY_COUNT + 1))
+        
+        if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+            print_warning "Container startup failed, cleaning up..."
+            
+            # Clean up failed attempt
+            docker compose down >> "$LOGFILE" 2>&1 || true
+            docker network prune -f >> "$LOGFILE" 2>&1 || true
+            
+            print_info "Waiting 10 seconds before retry..."
+            sleep 10
+        else
+            print_error "Failed to start Supabase services after $MAX_RETRIES attempts"
+            echo
+            print_info "This is usually caused by Docker networking issues. Try:"
+            printf "  ${C_CYAN}1. sudo systemctl restart docker${C_RESET}\n"
+            printf "  ${C_CYAN}2. cd /srv/supabase && sudo docker compose up -d${C_RESET}\n"
+            echo
+            print_info "Check logs with: cd /srv/supabase && docker compose logs"
+            print_info "Check ports with: sudo ss -tulpn | grep -E ':(8000|8443|6543|3000)'"
+            exit 1
+        fi
+    fi
+done
 
 # Wait for database to be healthy
 print_info "Waiting for database to be ready..."
