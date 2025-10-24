@@ -611,6 +611,7 @@ upsert_env FUNCTIONS_VERIFY_JWT "$([[ "$ENABLE_EDGE" = "y" ]] && echo false || e
 upsert_env DOCKER_SOCKET_LOCATION "/var/run/docker.sock"
 
 # Set LOGFLARE tokens for analytics (always enabled)
+upsert_env LOGFLARE_API_KEY "$LOGFLARE_PUBLIC"
 upsert_env LOGFLARE_PUBLIC_ACCESS_TOKEN "$LOGFLARE_PUBLIC"
 upsert_env LOGFLARE_PRIVATE_ACCESS_TOKEN "$LOGFLARE_PRIVATE"
 
@@ -741,17 +742,42 @@ print_success "Override configured"
 print_step_header "◉" "CHECKING FOR EXISTING INSTALLATION"
 echo
 
-if docker compose ps -q 2>/dev/null | grep -q .; then
-    print_warning "Existing Supabase containers detected"
-    if [[ $(ask_yn "Stop and remove existing containers?" "y") = "y" ]]; then
-        exec_with_spinner "Stopping existing containers..." docker compose down || {
-            print_error "Failed to stop existing containers"
-            exit 1
-        }
-        print_success "Existing containers removed"
+# Check for any Supabase containers (running, stopped, or created)
+if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -q '^supabase-'; then
+    print_warning "Existing Supabase containers detected (from previous installation)"
+    
+    # Show what containers exist
+    echo
+    print_info "Found containers:"
+    docker ps -a --filter "name=supabase-" --format "table {{.Names}}\t{{.Status}}" 2>/dev/null | head -n 15
+    echo
+    
+    if [[ $(ask_yn "Stop and remove ALL existing Supabase containers?" "y") = "y" ]]; then
+        # Force stop and remove all Supabase containers
+        print_info "Stopping and removing containers..."
+        
+        # Try docker compose down first (clean method)
+        if docker compose ps -q 2>/dev/null | grep -q .; then
+            exec_with_spinner "Stopping via docker compose..." docker compose down 2>/dev/null || true
+        fi
+        
+        # Force remove any remaining containers (nuclear option)
+        SUPABASE_CONTAINERS=$(docker ps -a --filter "name=supabase-" -q 2>/dev/null || true)
+        if [[ -n "$SUPABASE_CONTAINERS" ]]; then
+            exec_with_spinner "Force removing remaining containers..." bash -c "docker rm -f $SUPABASE_CONTAINERS" || {
+                print_error "Failed to remove containers"
+                exit 1
+            }
+        fi
+        
+        print_success "All existing containers removed"
     else
-        print_error "Cannot proceed with existing containers running"
-        print_info "Run 'docker compose down' in /srv/supabase to stop them"
+        print_error "Cannot proceed with existing containers present"
+        echo
+        print_info "To manually remove them, run:"
+        printf "  ${C_CYAN}cd /srv/supabase && docker compose down${C_RESET}\n"
+        printf "  ${C_CYAN}docker ps -a | grep supabase | awk '{print \$1}' | xargs docker rm -f${C_RESET}\n"
+        echo
         exit 1
     fi
 else
