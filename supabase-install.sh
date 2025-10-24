@@ -675,36 +675,38 @@ cat > docker-compose.override.yml <<YAML
 services:
 YAML
 
-# Only add port overrides when we need to change from defaults
-# Default ports: Kong HTTP=8000, Kong HTTPS=8443, Pooler=6543
-if [[ "$PIN_HTTPS_LOOPBACK" = "y" ]] || [[ "$PIN_POOLER_LOOPBACK" = "y" ]] || [[ "$KONG_HTTP_PORT" != "8000" ]]; then
+# Build Kong port configuration (must be a single service entry)
+KONG_NEEDS_OVERRIDE=false
+KONG_HTTP_BIND="${KONG_HTTP_PORT}:8000"
+KONG_HTTPS_BIND="0.0.0.0:${KONG_HTTPS_PORT}:8443"
 
-    # Kong HTTP port override (only if different from default 8000)
-    if [[ "$KONG_HTTP_PORT" != "8000" ]]; then
-        cat >> docker-compose.override.yml <<YAML
+# Check if we need to override Kong defaults
+if [[ "$KONG_HTTP_PORT" != "8000" ]]; then
+    KONG_NEEDS_OVERRIDE=true
+fi
+
+if [[ "$PIN_HTTPS_LOOPBACK" = "y" ]]; then
+    KONG_HTTPS_BIND="127.0.0.1:${KONG_HTTPS_PORT}:8443"
+    KONG_NEEDS_OVERRIDE=true
+fi
+
+# Write Kong service configuration once with all port bindings
+if [[ "$KONG_NEEDS_OVERRIDE" = "true" ]]; then
+    cat >> docker-compose.override.yml <<YAML
   kong:
     ports:
-      - "${KONG_HTTP_PORT}:8000"
+      - "${KONG_HTTP_BIND}"
+      - "${KONG_HTTPS_BIND}"
 YAML
-    fi
+fi
 
-    # Kong HTTPS port override (only if pinning to localhost)
-    if [[ "$PIN_HTTPS_LOOPBACK" = "y" ]]; then
-        cat >> docker-compose.override.yml <<YAML
-  kong:
-    ports:
-      - "127.0.0.1:${KONG_HTTPS_PORT}:8443"
-YAML
-    fi
-
-    # Supavisor port override (only if pinning to localhost)
-    if [[ "$PIN_POOLER_LOOPBACK" = "y" ]]; then
-        cat >> docker-compose.override.yml <<YAML
+# Supavisor port override (only if pinning to localhost)
+if [[ "$PIN_POOLER_LOOPBACK" = "y" ]]; then
+    cat >> docker-compose.override.yml <<YAML
   supavisor:
     ports:
       - "127.0.0.1:6543:6543"
 YAML
-    fi
 fi
 
 # Disable external access to sensitive services (always do this for security)
@@ -735,18 +737,88 @@ fi
 log "Docker compose override created"
 print_success "Override configured"
 
-# Deploy containers
-print_step_header "◉" "DEPLOYING CONTAINERS"
+# Check for existing Supabase installation
+print_step_header "◉" "CHECKING FOR EXISTING INSTALLATION"
 echo
 
-exec_with_spinner "Pulling container images (this may take a while)..." docker compose pull || {
+if docker compose ps -q 2>/dev/null | grep -q .; then
+    print_warning "Existing Supabase containers detected"
+    if [[ $(ask_yn "Stop and remove existing containers?" "y") = "y" ]]; then
+        exec_with_spinner "Stopping existing containers..." docker compose down || {
+            print_error "Failed to stop existing containers"
+            exit 1
+        }
+        print_success "Existing containers removed"
+    else
+        print_error "Cannot proceed with existing containers running"
+        print_info "Run 'docker compose down' in /srv/supabase to stop them"
+        exit 1
+    fi
+else
+    print_success "No existing containers found"
+fi
+
+# Check port availability
+print_info "Checking port availability..."
+PORTS_IN_USE=()
+
+# Check Kong HTTP port
+if ss -ltn 2>/dev/null | grep -q ":${KONG_HTTP_PORT} "; then
+    PORTS_IN_USE+=("${KONG_HTTP_PORT} (Kong HTTP)")
+fi
+
+# Check Kong HTTPS port (only if not pinned to localhost)
+if [[ "$PIN_HTTPS_LOOPBACK" != "y" ]] && ss -ltn 2>/dev/null | grep -q ":${KONG_HTTPS_PORT} "; then
+    PORTS_IN_USE+=("${KONG_HTTPS_PORT} (Kong HTTPS)")
+fi
+
+# Check Supavisor pooler port (only if not pinned to localhost)
+if [[ "$PIN_POOLER_LOOPBACK" != "y" ]] && ss -ltn 2>/dev/null | grep -q ":6543 "; then
+    PORTS_IN_USE+=("6543 (Supavisor)")
+fi
+
+# Check Studio port (always 3000)
+if ss -ltn 2>/dev/null | grep -q ":3000 "; then
+    PORTS_IN_USE+=("3000 (Studio)")
+fi
+
+if [[ ${#PORTS_IN_USE[@]} -gt 0 ]]; then
+    print_warning "The following ports are already in use:"
+    for port in "${PORTS_IN_USE[@]}"; do
+        printf "  ${C_YELLOW}•${C_RESET} %s\n" "$port"
+    done
+    echo
+    print_info "To find what's using these ports, run: sudo ss -lptn | grep ':<port>'"
+    echo
+    if [[ $(ask_yn "Continue anyway?" "n") = "n" ]]; then
+        print_warning "Installation aborted due to port conflicts"
+        log "Installation aborted: ports in use - ${PORTS_IN_USE[*]}"
+        exit 1
+    fi
+else
+    print_success "All required ports are available"
+fi
+
+# Download container images
+print_step_header "◉" "DOWNLOADING CONTAINER IMAGES"
+echo
+
+print_info "This may take several minutes depending on your internet connection..."
+exec_with_spinner "Pulling container images..." docker compose pull || {
     print_error "Failed to pull Docker images. Please check your internet connection."
     exit 1
 }
 
-# Start all services
-exec_with_spinner "Starting Supabase services..." docker compose up -d || {
+log "All container images downloaded successfully"
+print_success "All images downloaded"
+
+# Start containers
+print_step_header "◉" "STARTING SUPABASE SERVICES"
+echo
+
+exec_with_spinner "Starting containers..." docker compose up -d || {
     print_error "Failed to start Supabase services"
+    print_info "Try running: cd /srv/supabase && docker compose logs"
     exit 1
 }
 

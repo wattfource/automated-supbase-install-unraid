@@ -165,6 +165,78 @@ tail -f prerequisites-install-*.log
 
 ---
 
+## Managing Supabase (Docker Commands)
+
+All commands must be run from `/srv/supabase`:
+```bash
+cd /srv/supabase
+```
+
+### Essential Commands
+
+**Check Status**
+```bash
+docker compose ps
+```
+
+**View Logs**
+```bash
+docker compose logs -f              # All services
+docker compose logs -f auth         # Specific service
+docker compose logs --tail=100      # Last 100 lines
+```
+
+**Start/Stop/Restart**
+```bash
+docker compose up -d                # Start all services
+docker compose stop                 # Stop all services
+docker compose restart              # Restart all services
+docker compose restart kong         # Restart specific service
+```
+
+**Stop and Remove**
+```bash
+docker compose down                 # Stop and remove containers (keeps data)
+docker compose down -v              # ⚠️ DELETES ALL DATA!
+```
+
+**Update Supabase**
+```bash
+docker compose pull                 # Download updates
+docker compose up -d                # Apply updates
+```
+
+### Quick Troubleshooting
+
+**Service won't start**
+```bash
+docker compose logs <service-name>  # Check logs
+docker compose restart <service-name>
+```
+
+**Port conflict**
+```bash
+sudo ss -tulpn | grep :8000         # Find what's using port
+```
+
+**Database backup**
+```bash
+docker compose exec -T db pg_dump -U postgres -Fc -d postgres > backup.dump
+```
+
+**Check resources**
+```bash
+docker stats                        # CPU/memory usage
+docker system df                    # Disk usage
+```
+
+**Force refresh**
+```bash
+docker compose up -d --force-recreate
+```
+
+---
+
 ## Troubleshooting
 
 **If prerequisites check fails in Supabase installer:**
@@ -178,6 +250,13 @@ tail -f prerequisites-install-*.log
 # Manual cleanup (script does this automatically)
 sudo rm -f /etc/apt/sources.list.d/docker.list /etc/apt/keyrings/docker.gpg
 sudo apt update
+```
+
+**If Supabase containers already running:**
+```bash
+cd /srv/supabase
+docker compose down
+# Then re-run installer
 ```
 
 **Skip animation in Supabase installer:**

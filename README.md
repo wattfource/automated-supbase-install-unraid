@@ -241,6 +241,242 @@ Replace `VM-IP` with your VM's IP address (displayed at end of installation)
    docker compose pull && docker compose up -d
    ```
 
+## Managing Your Supabase Installation
+
+All Docker commands must be run from the Supabase directory:
+```bash
+cd /srv/supabase
+```
+
+### Basic Operations
+
+**Check Status**
+```bash
+docker compose ps
+# Shows all containers and their health status
+```
+
+**View Logs**
+```bash
+# All services
+docker compose logs -f
+
+# Specific service
+docker compose logs -f auth
+docker compose logs -f db
+docker compose logs -f kong
+docker compose logs -f storage
+
+# Last 100 lines
+docker compose logs --tail=100
+```
+
+**Start All Services**
+```bash
+docker compose up -d
+# -d runs in background (detached mode)
+```
+
+**Stop All Services**
+```bash
+docker compose stop
+# Graceful shutdown (preserves data)
+```
+
+**Stop and Remove Containers**
+```bash
+docker compose down
+# Stops and removes containers (data in volumes is preserved)
+
+docker compose down -v
+# ⚠️ WARNING: Removes containers AND volumes (deletes all data!)
+```
+
+**Restart All Services**
+```bash
+docker compose restart
+```
+
+**Restart Specific Service**
+```bash
+docker compose restart auth
+docker compose restart kong
+docker compose restart storage
+```
+
+### Updating Supabase
+
+**Pull Latest Images**
+```bash
+cd /srv/supabase
+docker compose pull
+docker compose up -d
+# Downloads new versions and recreates containers
+```
+
+**Check for Updates**
+```bash
+docker compose pull --dry-run
+# Shows which images would be updated
+```
+
+### Troubleshooting Commands
+
+**View Container Resource Usage**
+```bash
+docker stats
+# Shows CPU, memory, network usage in real-time
+```
+
+**Inspect Container Details**
+```bash
+docker compose ps
+docker inspect <container-name>
+```
+
+**Access Container Shell**
+```bash
+docker compose exec db bash
+docker compose exec storage sh
+# Exit with: exit
+```
+
+**Run Database Query**
+```bash
+docker compose exec -T db psql -U postgres -d postgres -c "SELECT version();"
+```
+
+**Verify Storage Mount**
+```bash
+docker compose exec storage ls -lah /var/lib/storage
+```
+
+**Check Port Bindings**
+```bash
+docker compose ps
+# Or system-wide:
+sudo ss -tulpn | grep docker
+```
+
+**Force Recreate Containers**
+```bash
+docker compose up -d --force-recreate
+# Useful if configuration changes aren't applying
+```
+
+**Remove Unused Images**
+```bash
+docker image prune -a
+# Frees up disk space from old images
+```
+
+### Common Issues
+
+**Port Already in Use**
+```bash
+# Find what's using the port
+sudo ss -tulpn | grep :8000
+sudo ss -tulpn | grep :3000
+
+# Stop conflicting service or change Supabase ports in .env
+```
+
+**Service Won't Start**
+```bash
+# Check specific service logs
+docker compose logs <service-name>
+
+# Check if database is healthy
+docker compose ps db
+
+# Restart problematic service
+docker compose restart <service-name>
+```
+
+**Database Connection Issues**
+```bash
+# Verify database is running and healthy
+docker compose ps db
+
+# Check database logs
+docker compose logs db
+
+# Test connection
+docker compose exec db psql -U postgres -d postgres -c "SELECT 1;"
+```
+
+**Out of Disk Space**
+```bash
+# Check Docker disk usage
+docker system df
+
+# Remove unused containers, images, volumes
+docker system prune -a --volumes
+# ⚠️ WARNING: This removes ALL unused Docker data
+```
+
+### Service-Specific Commands
+
+**Database (PostgreSQL)**
+```bash
+# Connect to database
+docker compose exec db psql -U postgres -d postgres
+
+# Create backup
+docker compose exec -T db pg_dump -U postgres -Fc -d postgres > backup.dump
+
+# Restore backup
+cat backup.dump | docker compose exec -T db pg_restore -U postgres -d postgres
+```
+
+**Storage Service**
+```bash
+# Check storage usage
+docker compose exec storage du -sh /var/lib/storage
+
+# List uploaded files
+docker compose exec storage find /var/lib/storage -type f
+```
+
+**Kong API Gateway**
+```bash
+# Check Kong status
+docker compose exec kong kong health
+
+# Reload Kong configuration
+docker compose restart kong
+```
+
+### Emergency Recovery
+
+**Complete Reset (Preserves Data)**
+```bash
+cd /srv/supabase
+docker compose down
+docker compose up -d
+```
+
+**Complete Reset (Removes Everything)**
+```bash
+cd /srv/supabase
+docker compose down -v
+rm -rf volumes/*
+# Then re-run supabase-install.sh
+```
+
+**Backup Before Major Changes**
+```bash
+# Backup database
+docker compose exec -T db pg_dump -U postgres -Fc -d postgres > backup.dump
+
+# Backup .env file
+cp .env .env.backup
+
+# Backup docker-compose files
+cp docker-compose.yml docker-compose.yml.backup
+cp docker-compose.override.yml docker-compose.override.yml.backup
+```
+
 ## Files & Locations
 
 - **Project Directory**: `/srv/supabase`
@@ -249,6 +485,7 @@ Replace `VM-IP` with your VM's IP address (displayed at end of installation)
 - **Override Config**: `/srv/supabase/docker-compose.override.yml`
 - **Storage Mount**: `/mnt/unraid/supabase-storage/<APEX_DOMAIN>`
 - **Backup Files**: `/srv/supabase/.env.bak.*`
+- **Installation Logs**: `/tmp/supabase-install-*.log`
 
 ## Requirements
 
