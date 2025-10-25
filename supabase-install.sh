@@ -160,6 +160,8 @@ require_root() {
 
 # Generate URL-safe base64 (no /, +, or = characters that break URLs)
 gen_b64() { openssl rand -base64 "$1" 2>>"$LOGFILE" | tr '+/' '-_' | tr -d '='; }
+# Generate standard base64 (for encryption keys that need standard base64 format)
+gen_b64_standard() { openssl rand -base64 "$1" 2>>"$LOGFILE" | tr -d '\n'; }
 b64url() { openssl enc -base64 -A | tr '+/' '-_' | tr -d '='; }
 
 gen_jwt_for_role() {
@@ -234,9 +236,10 @@ print_info "Generating crypto-secure secrets..."
 
 POSTGRES_PASSWORD="$(gen_b64 32)"
 JWT_SECRET="$(gen_b64 48)"
-PG_META_CRYPTO_KEY="$(gen_b64 32)"
-SECRET_KEY_BASE="$(gen_b64 64)"
-VAULT_ENC_KEY="$(gen_b64 32)"
+# Encryption keys must use standard base64 (not URL-safe) for AES-GCM compatibility
+PG_META_CRYPTO_KEY="$(gen_b64_standard 32)"
+SECRET_KEY_BASE="$(gen_b64_standard 64)"
+VAULT_ENC_KEY="$(gen_b64_standard 32)"
 LOGFLARE_PUBLIC="$(gen_b64 32)"
 LOGFLARE_PRIVATE="$(gen_b64 32)"
 DASHBOARD_PASSWORD="$(gen_b64 16)"
@@ -693,6 +696,20 @@ cat > docker-compose.override.yml <<YAML
 services:
 YAML
 
+# Expose Studio for LAN access (admin dashboard)
+cat >> docker-compose.override.yml <<YAML
+  studio:
+    ports:
+      - "0.0.0.0:3000:3000"
+YAML
+
+# Expose Supavisor pooler for direct database connections
+cat >> docker-compose.override.yml <<YAML
+  supavisor:
+    ports:
+      - "0.0.0.0:6543:6543"
+YAML
+
 # Kong port configuration (only override if using non-default ports)
 if [[ "$KONG_HTTP_PORT" != "8000" ]] || [[ "$KONG_HTTPS_PORT" != "8443" ]]; then
     cat >> docker-compose.override.yml <<YAML
@@ -951,7 +968,10 @@ printf "${C_WHITE}Next Steps:${C_RESET}\n"
 echo "  1) Configure reverse proxy (optional) for SSL termination:"
 echo "     • $API_URL → http://${LOCAL_IP}:${KONG_HTTP_PORT} (enable WebSockets)"
 echo "     • $SITE_URL → http://${LOCAL_IP}:3000"
-echo "  2) Or access directly: http://${LOCAL_IP}:${KONG_HTTP_PORT} (API) / http://${LOCAL_IP}:3000 (Studio)"
+echo "  2) Or access directly:"
+echo "     • Studio Dashboard: http://${LOCAL_IP}:3000"
+echo "     • API Gateway: http://${LOCAL_IP}:${KONG_HTTP_PORT}"
+echo "     • Database Pooler: postgresql://postgres.${POOLER_TENANT_ID}:${POSTGRES_PASSWORD}@${LOCAL_IP}:6543/postgres"
 echo "  3) Test your API endpoint and visit Studio dashboard"
 echo
 
