@@ -48,10 +48,9 @@ This installer consists of **two steps**: prerequisites installation followed by
 **📁 Files included:**
 - `prerequisites-install.sh` - Installs Git, Docker, and Docker Compose
 - `supabase-install.sh` - Interactive Supabase configuration and deployment
-- `QUICK-START.md` - Quick reference guide
+- `backup-from-cloud.sh` - Migrates database from Supabase Cloud
+- `restore-database.sh` - Restores database backups
 - `README.md` - Complete documentation
-
-> **📋 Quick Reference**: See [QUICK-START.md](QUICK-START.md) for streamlined installation commands and troubleshooting tips.
 
 ### Key Differences from Official Guide
 
