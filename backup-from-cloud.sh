@@ -193,14 +193,18 @@ backup_from_cloud() {
     print_warning "This may take several minutes depending on database size..."
     log "Starting pg_dump: host=$host port=$port db=$db output=$output_file"
     
-    # Use pg_dump with custom format for best compression and restore options
+    # Use plain SQL format (most compatible, human-readable)
     if PGPASSWORD="$pass" pg_dump -h "$host" -p "$port" -U "$user" -d "$db" \
-        --format=custom \
-        --verbose \
+        --format=plain \
         --no-owner \
         --no-acl \
         --file="$output_file" \
-        2>&1 | tee -a "$LOGFILE" | grep -E "(dumping|processing)" || true; then
+        2>&1 | tee -a "$LOGFILE"; then
+        
+        # Compress the SQL file
+        print_info "Compressing backup..."
+        gzip "$output_file"
+        output_file="${output_file}.gz"
         
         local size=$(du -h "$output_file" | cut -f1)
         print_success "Backup completed: $output_file ($size)"
@@ -373,7 +377,7 @@ if [[ $(ask_yn "Proceed with backup?" "y") = "n" ]]; then
 fi
 
 # Create output file
-BACKUP_FILE="${BACKUP_DIR}/cloud-backup-$(date +%Y%m%d-%H%M%S).dump"
+BACKUP_FILE="${BACKUP_DIR}/cloud-backup-$(date +%Y%m%d-%H%M%S).sql"
 log "Output file: $BACKUP_FILE"
 
 # Perform backup
@@ -390,10 +394,13 @@ printf "${C_GREEN}║                    BACKUP COMPLETED                       
 printf "${C_GREEN}╚════════════════════════════════════════════════════════════════╝${C_RESET}\n"
 echo
 
+# Update backup file path (it's now compressed)
+BACKUP_FILE="${BACKUP_FILE}.gz"
 BACKUP_SIZE=$(du -h "$BACKUP_FILE" | cut -f1)
 print_success "Cloud database backed up successfully"
 print_success "Backup saved to: $BACKUP_FILE"
 print_success "Backup size: $BACKUP_SIZE"
+print_success "Format: Compressed SQL (.sql.gz)"
 echo
 
 # Offer to restore to local instance

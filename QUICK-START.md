@@ -225,34 +225,24 @@ docker compose restart <service-name>
 sudo ss -tulpn | grep :8000         # Find what's using port
 ```
 
-**Database backup**
+**Local database backup**
 ```bash
-docker compose exec -T db pg_dump -U postgres -Fc -d postgres > backup.dump
+cd /srv/supabase
+docker compose exec -T db pg_dump -U postgres -d postgres | gzip > "backups/backup-$(date +%F).sql.gz"
 ```
+*Creates compressed SQL backup*
 
-**Backup from Supabase Cloud**
+**Migrate from Supabase Cloud**
 ```bash
-# ⚠️  PREREQUISITE: Enable IPv4 Direct Connection add-on in Supabase Cloud first!
-#    Settings → Add-ons → IPv4 Address (paid add-on)
-
-# Download backup-from-cloud utility (once)
-sudo bash -c 'cd /tmp && curl -fsSL https://raw.githubusercontent.com/wattfource/automated-supbase-install-unraid/main/backup-from-cloud.sh -o backup-from-cloud.sh && chmod +x backup-from-cloud.sh && mv backup-from-cloud.sh /srv/supabase/scripts/'
-
-# Backup directly from Supabase Cloud (prompts for credentials)
-sudo bash /srv/supabase/scripts/backup-from-cloud.sh
-
-# Or backup and restore in one command
 sudo bash /srv/supabase/scripts/backup-from-cloud.sh --auto-restore
 ```
+*Requires IPv4 add-on in Supabase Cloud (Settings → Add-ons)*
 
-**Database restore**
+**Restore database**
 ```bash
-# Download restore utility (once)
-sudo bash -c 'cd /tmp && curl -fsSL https://raw.githubusercontent.com/wattfource/automated-supbase-install-unraid/main/restore-database.sh -o restore-database.sh && chmod +x restore-database.sh && mv restore-database.sh /srv/supabase/scripts/'
-
-# Restore any backup (auto-detects format)
-sudo bash /srv/supabase/scripts/restore-database.sh /tmp/backup.dump
+sudo bash /srv/supabase/scripts/restore-database.sh /tmp/backup.sql.gz
 ```
+*Auto-detects format, creates safety backup*
 
 **Check resources**
 ```bash
@@ -272,47 +262,20 @@ The installer automatically downloads these helper scripts to `/srv/supabase/scr
 **Run diagnostics**
 ```bash
 sudo bash /srv/supabase/scripts/diagnostic.sh
-# Comprehensive system report with health checks
 ```
+*Comprehensive system report with health checks*
 
-**Quick update**
+**Update Supabase**
 ```bash
 sudo bash /srv/supabase/scripts/update.sh
-# Automated backup + update workflow
 ```
+*Automated backup + update workflow*
 
-**Backup from Supabase Cloud**
+**Update helper scripts** *(if time has elapsed since installation)*
 ```bash
-# ⚠️  Requires IPv4 Direct Connection add-on in Supabase Cloud (paid)
-
-# Download cloud backup utility
-sudo bash -c 'cd /tmp && curl -fsSL https://raw.githubusercontent.com/wattfource/automated-supbase-install-unraid/main/backup-from-cloud.sh -o backup-from-cloud.sh && chmod +x backup-from-cloud.sh && mv backup-from-cloud.sh /srv/supabase/scripts/'
-
-# Backup from Supabase Cloud (SSL connection)
-sudo bash /srv/supabase/scripts/backup-from-cloud.sh
-# Prompts for credentials, saves to /srv/supabase/backups/
-
-# Or backup and restore in one step
-sudo bash /srv/supabase/scripts/backup-from-cloud.sh --auto-restore
-```
-
-**Database restore**
-```bash
-# Download restore utility
-sudo bash -c 'cd /tmp && curl -fsSL https://raw.githubusercontent.com/wattfource/automated-supbase-install-unraid/main/restore-database.sh -o restore-database.sh && chmod +x restore-database.sh && mv restore-database.sh /srv/supabase/scripts/'
-
-# Restore from backup
-sudo bash /srv/supabase/scripts/restore-database.sh /tmp/backup.dump
-# Supports: .dump, .backup, .sql, .sql.gz
-# Auto-creates safety backup, verifies health, restarts services
-```
-
-**Update backup/restore utilities**
-```bash
-# If time has elapsed since installation, get the latest versions:
-# Downloads + overwrites with latest from repo
 sudo bash -c 'cd /srv/supabase/scripts && curl -fsSL https://raw.githubusercontent.com/wattfource/automated-supbase-install-unraid/main/backup-from-cloud.sh -o backup-from-cloud.sh && curl -fsSL https://raw.githubusercontent.com/wattfource/automated-supbase-install-unraid/main/restore-database.sh -o restore-database.sh && chmod +x backup-from-cloud.sh restore-database.sh && echo "✓ Utilities updated"'
 ```
+*Downloads latest versions from repo*
 
 ---
 
