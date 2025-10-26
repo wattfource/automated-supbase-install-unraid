@@ -166,18 +166,6 @@ The Supabase installer will guide you through:
 
 **✅ Analytics & Monitoring**: Always enabled - provides Studio dashboard, API monitoring, and debugging capabilities essential for managing your Supabase instance.
 
-### Alternative: Combined Installation (Both Steps)
-
-If you prefer to run both steps together:
-
-```bash
-sudo bash -c 'rm -f /etc/apt/sources.list.d/docker.list /etc/apt/keyrings/docker.gpg 2>/dev/null; apt update && apt -y upgrade && apt install -y wget curl gpg && cd /tmp && wget --no-cache -O prerequisites-install.sh https://raw.githubusercontent.com/wattfource/automated-supbase-install-unraid/main/prerequisites-install.sh && chmod +x prerequisites-install.sh && ./prerequisites-install.sh && wget --no-cache -O supabase-install.sh https://raw.githubusercontent.com/wattfource/automated-supbase-install-unraid/main/supabase-install.sh && chmod +x supabase-install.sh && ./supabase-install.sh'
-```
-
-This will:
-1. Install prerequisites (Git, Docker, Docker Compose)
-2. Run the Supabase configuration wizard
-3. Deploy the complete Supabase stack
 ### Troubleshooting
 
 **If prerequisites installation fails:**
@@ -256,6 +244,14 @@ These utilities help you migrate your database from Supabase Cloud to your self-
 ### Migration Methods
 
 **Option A: Direct Migration (Recommended)**
+
+First, download the latest migration utilities:
+```bash
+sudo bash -c 'cd /srv/supabase/scripts && curl -fsSL https://raw.githubusercontent.com/wattfource/automated-supbase-install-unraid/main/backup-from-cloud.sh -o backup-from-cloud.sh && curl -fsSL https://raw.githubusercontent.com/wattfource/automated-supbase-install-unraid/main/restore-database.sh -o restore-database.sh && chmod +x backup-from-cloud.sh restore-database.sh && echo "✓ Migration utilities updated"'
+```
+*Downloads latest versions from repository and overwrites existing files*
+
+Then run the migration:
 ```bash
 sudo bash /srv/supabase/scripts/backup-from-cloud.sh --auto-restore
 ```
@@ -281,17 +277,6 @@ cd /srv/supabase
 docker compose ps
 ```
 *All containers should show "Up" and "healthy"*
-
-### Local Backup (Optional)
-
-If you need to back up your self-hosted database:
-```bash
-cd /srv/supabase
-docker compose exec -T db pg_dump -U postgres -d postgres | gzip > "backups/backup-$(date +%F).sql.gz"
-```
-*Creates compressed SQL backup in `/srv/supabase/backups/`*
-
-**Storage files** (uploaded content) are already on your Unraid array with parity protection.
 
 ## Managing Your Supabase Installation
 
