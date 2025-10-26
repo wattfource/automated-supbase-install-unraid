@@ -225,24 +225,17 @@ docker compose restart <service-name>
 sudo ss -tulpn | grep :8000         # Find what's using port
 ```
 
-**Local database backup**
-```bash
-cd /srv/supabase
-docker compose exec -T db pg_dump -U postgres -d postgres | gzip > "backups/backup-$(date +%F).sql.gz"
-```
-*Creates compressed SQL backup*
-
 **Migrate from Supabase Cloud**
 ```bash
 sudo bash /srv/supabase/scripts/backup-from-cloud.sh --auto-restore
 ```
-*Requires IPv4 add-on in Supabase Cloud (Settings → Add-ons)*
+*Migrates database from cloud to self-hosted - requires IPv4 add-on (Settings → Add-ons)*
 
 **Restore database**
 ```bash
 sudo bash /srv/supabase/scripts/restore-database.sh /tmp/backup.sql.gz
 ```
-*Auto-detects format, creates safety backup*
+*Restores backup - creates safety backup, restarts services*
 
 **Check resources**
 ```bash

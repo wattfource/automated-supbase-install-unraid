@@ -228,11 +228,9 @@ Replace `VM-IP` with your VM's IP address (displayed at end of installation)
    docker compose up -d auth
    ```
 
-3. **Setup Backups**
+3. **Migrate from Cloud** (if applicable)
    ```bash
-   cd /srv/supabase
-   mkdir -p backups
-   docker compose exec -T db pg_dump -U postgres -Fc -d postgres > "backups/$(date +%F_%H-%M).dump"
+   sudo bash /srv/supabase/scripts/backup-from-cloud.sh --auto-restore
    ```
 
 4. **Update Stack**
@@ -241,64 +239,30 @@ Replace `VM-IP` with your VM's IP address (displayed at end of installation)
    docker compose pull && docker compose up -d
    ```
 
-## Database Backup & Restore
+## Migrating from Supabase Cloud to Self-Hosted
 
-### Creating Local Backups
+These utilities help you migrate your database from Supabase Cloud to your self-hosted instance.
 
-**Quick backup of your self-hosted database:**
-```bash
-cd /srv/supabase
-docker compose exec -T db pg_dump -U postgres -d postgres | gzip > "backups/backup-$(date +%F).sql.gz"
-```
-*Creates compressed SQL backup in `/srv/supabase/backups/` - human-readable, universally compatible*
+### Prerequisites
 
-**Automated Daily Backups:**
-```bash
-sudo tee /srv/supabase/scripts/backup-database.sh > /dev/null << 'EOF'
-#!/bin/bash
-cd /srv/supabase
-docker compose exec -T db pg_dump -U postgres -d postgres | gzip > "backups/backup-$(date +%F).sql.gz"
-find backups/ -name "backup-*.sql.gz" -mtime +7 -delete
-EOF
-
-sudo chmod +x /srv/supabase/scripts/backup-database.sh
-(crontab -l 2>/dev/null; echo "0 2 * * * /srv/supabase/scripts/backup-database.sh") | crontab -
-```
-*Runs daily at 2 AM, keeps last 7 days*
-
-### Restoring Backups
-
-**Option A: Using the Restore Script (Recommended)**
-```bash
-sudo bash /srv/supabase/scripts/restore-database.sh /tmp/your-backup.sql.gz
-```
-*Auto-detects format, creates safety backup, restarts services, verifies health*
-
-**Option B: Manual Restore**
-```bash
-zcat /tmp/backup.sql.gz | docker compose exec -T db psql -U postgres -d postgres
-```
-*Direct restore from compressed SQL backup*
-
-### Migrating from Supabase Cloud
-
-**Prerequisites:**
 ⚠️ **IPv4 Direct Connection Add-on** required in Supabase Cloud (paid add-on)
 - Go to Settings → Add-ons → IPv4 Address → Enable
 - Wait a few minutes for provisioning
 
-**Option A: Direct Backup from Cloud (Recommended)**
+**What you'll need:**
+1. Go to Settings → Database → Connection string
+2. Select "Direct connection" (port 5432, NOT pooled)
+3. Have ready: Host, Port, Database, User, Password
+
+### Migration Methods
+
+**Option A: Direct Migration (Recommended)**
 ```bash
 sudo bash /srv/supabase/scripts/backup-from-cloud.sh --auto-restore
 ```
-*Interactive script that prompts for your Supabase Cloud credentials, downloads database, and restores to local instance*
+*Interactive script prompts for your Supabase Cloud credentials, downloads database, and restores to local instance*
 
-**What you'll need:**
-1. Go to Settings → Database → Connection string
-2. Select "Direct connection" (port 5432)
-3. Have ready: Host, Port, Database, User, Password
-
-**Option B: Manual Export**
+**Option B: Manual Export (if IPv4 add-on unavailable)**
 ```bash
 # 1. Download backup from Supabase Cloud dashboard
 #    Settings → Database → Database Backups → Download
@@ -309,36 +273,26 @@ scp backup.sql user@vm-ip:/tmp/
 # 3. Restore
 sudo bash /srv/supabase/scripts/restore-database.sh /tmp/backup.sql
 ```
-*Use this if IPv4 add-on is not available*
+*Restore script creates safety backup, restarts services, verifies health*
 
-**Verify Migration:**
+### Verify Migration
+
 ```bash
 cd /srv/supabase
 docker compose ps
 ```
 *All containers should show "Up" and "healthy"*
 
-### Backup Best Practices
+### Local Backup (Optional)
 
-**Frequency:**
-- Production: Daily automated backups (2 AM)
-- Keep last 7 days
-
-**Storage:**
-- Backups stored in `/srv/supabase/backups/`
-- Copy critical backups to Unraid array for parity protection
-- Test restores periodically
-
-**What's Included:**
-- ✅ All database data (tables, users, auth, policies, functions)
-- ❌ Storage files (already on Unraid array with parity)
-- ❌ `.env` config (back up separately if needed)
-
-**Storage Files:**
+If you need to back up your self-hosted database:
 ```bash
-rsync -av /mnt/unraid/supabase-storage/ /mnt/backups/supabase-storage/
+cd /srv/supabase
+docker compose exec -T db pg_dump -U postgres -d postgres | gzip > "backups/backup-$(date +%F).sql.gz"
 ```
-*Optional: Additional backup of uploaded files*
+*Creates compressed SQL backup in `/srv/supabase/backups/`*
+
+**Storage files** (uploaded content) are already on your Unraid array with parity protection.
 
 ## Managing Your Supabase Installation
 
@@ -707,7 +661,7 @@ cp docker-compose.override.yml docker-compose.override.yml.backup
 - **Helper Scripts**: `/srv/supabase/scripts/` (auto-installed during setup)
   - `diagnostic.sh` - System diagnostics
   - `update.sh` - Update automation
-  - `backup-from-cloud.sh` - Cloud backup utility
+  - `backup-from-cloud.sh` - Cloud-to-self-hosted migration
   - `restore-database.sh` - Database restore utility
 - **Storage Mount**: `/mnt/unraid/supabase-storage/<APEX_DOMAIN>`
 - **Backup Directory**: `/srv/supabase/backups/`
@@ -715,7 +669,7 @@ cp docker-compose.override.yml docker-compose.override.yml.backup
 
 ## Helper Scripts (Auto-Installed)
 
-The installer automatically downloads and creates helper scripts for easy troubleshooting and maintenance. All scripts are placed in `/srv/supabase/scripts/` during installation:
+The installer automatically downloads helper scripts for migration, troubleshooting, and maintenance. All scripts are placed in `/srv/supabase/scripts/` during installation:
 
 ### Diagnostic Script
 **Location**: `/srv/supabase/scripts/diagnostic.sh`
@@ -748,21 +702,21 @@ Simplified update process with automatic backups:
 sudo bash /srv/supabase/scripts/update.sh
 ```
 
-### Backup from Cloud Script
+### Cloud Migration Script
 **Location**: `/srv/supabase/scripts/backup-from-cloud.sh` *(auto-installed)*
 
 ```bash
 sudo bash /srv/supabase/scripts/backup-from-cloud.sh --auto-restore
 ```
-*Downloads database from Supabase Cloud and restores to local instance - requires IPv4 add-on*
+*Migrates database from Supabase Cloud to your self-hosted instance - requires IPv4 add-on*
 
-### Restore Database Script
+### Database Restore Script
 **Location**: `/srv/supabase/scripts/restore-database.sh` *(auto-installed)*
 
 ```bash
 sudo bash /srv/supabase/scripts/restore-database.sh /tmp/backup.sql.gz
 ```
-*Restores any backup format, creates safety backup first, restarts services*
+*Restores database backup to self-hosted instance - creates safety backup, restarts services*
 
 ### Update/Reinstall Backup & Restore Utilities
 
