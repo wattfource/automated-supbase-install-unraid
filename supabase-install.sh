@@ -169,6 +169,14 @@ require_root() {
 
 # Generate Base64URL (no padding): A-Za-z0-9-_ only, ~256-bit entropy for 32 bytes
 gen_b64_url() { openssl rand "$1" 2>>"$LOGFILE" | base64 | tr '+/' '-_' | tr -d '=' | tr -d '\n'; }
+
+# Generate fixed-length secret (for Supavisor/Cloak encryption keys)
+# These need to be exactly N characters long (not N bytes encoded)
+gen_fixed_secret() { 
+    local len="$1"
+    openssl rand -base64 48 2>>"$LOGFILE" | tr -d "=+/\n" | head -c "$len"
+}
+
 # Helper for JWT generation (URL-safe)
 b64url() { openssl enc -base64 -A | tr '+/' '-_' | tr -d '='; }
 
@@ -246,24 +254,25 @@ print_info "Using URL-safe Base64 encoding (A-Za-z0-9-_) for all secrets"
 print_info "This ensures compatibility across all Supabase services"
 echo
 
-# ALL secrets use Base64URL (no padding) for consistency and compatibility
-# This is the format that works reliably with Supabase/Supavisor
-# JWT signing: 48 bytes = 384-bit entropy, Base64URL encoded
+# Generate secrets with proper formats for each service
+# JWT signing: 64 chars of high-entropy base64url
 JWT_SECRET="$(gen_b64_url 48)"
-# Database password: 32 bytes = 256-bit entropy
+# Database password: 43 chars base64url
 POSTGRES_PASSWORD="$(gen_b64_url 32)"
-# Encryption keys for AES-256: 32 bytes each = 256-bit keys (URL-safe)
-VAULT_ENC_KEY="$(gen_b64_url 32)"
-PG_META_CRYPTO_KEY="$(gen_b64_url 32)"
+# Encryption keys for Supavisor/Cloak: MUST be exactly 32 characters (not 32 bytes encoded)
+# These are used directly as AES-256 keys and must be exactly 32 ASCII chars
+VAULT_ENC_KEY="$(gen_fixed_secret 32)"
+PG_META_CRYPTO_KEY="$(gen_fixed_secret 32)"
+# Session secret: 86 chars base64url
 SECRET_KEY_BASE="$(gen_b64_url 64)"
-# Analytics tokens: 32 bytes = 256-bit entropy each
+# Analytics tokens: 43 chars base64url each
 LOGFLARE_PUBLIC="$(gen_b64_url 32)"
 LOGFLARE_PRIVATE="$(gen_b64_url 32)"
-# Dashboard password: 16 bytes = 128-bit entropy
+# Dashboard password: 22 chars base64url
 DASHBOARD_PASSWORD="$(gen_b64_url 16)"
 
-log "Generated: JWT_SECRET(48B), POSTGRES_PASSWORD(32B), VAULT_ENC_KEY(32B), PG_META_CRYPTO_KEY(32B), SECRET_KEY_BASE(64B), LOGFLARE_PUBLIC(32B), LOGFLARE_PRIVATE(32B), DASHBOARD_PASSWORD(16B) - all URL-safe Base64"
-print_success "All secrets generated with URL-safe Base64 encoding"
+log "Generated secrets: JWT_SECRET, POSTGRES_PASSWORD, VAULT_ENC_KEY(32chars), PG_META_CRYPTO_KEY(32chars), SECRET_KEY_BASE, LOGFLARE tokens, DASHBOARD_PASSWORD"
+print_success "All secrets generated with proper encoding for each service"
 
 # STEP 3: Database Config
 print_step_header "3" "DATABASE CONFIG"
