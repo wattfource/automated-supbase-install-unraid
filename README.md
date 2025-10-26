@@ -306,6 +306,35 @@ docker compose restart storage
 
 ### Updating Supabase
 
+There are two methods to update your Supabase installation: **automated** (recommended) or **manual**.
+
+#### Method 1: Automated Update Script (Recommended)
+
+The update script handles everything safely:
+
+**Download and run the updater:**
+```bash
+sudo bash -c 'cd /tmp && wget --no-cache -O update-supabase.sh https://raw.githubusercontent.com/wattfource/automated-supbase-install-unraid/main/update-supabase.sh && chmod +x update-supabase.sh && ./update-supabase.sh'
+```
+
+**What the update script does:**
+- ✅ Creates automatic backups (database, config files)
+- ✅ Updates system packages (Docker, tools)
+- ✅ Checks for new Supabase container images
+- ✅ Applies updates with zero downtime
+- ✅ Verifies all services are healthy
+- ✅ Cleans up old images and backups
+- ✅ Provides rollback instructions if needed
+
+**Update frequency recommendations:**
+- **Monthly**: Check for Supabase updates (new features, security patches)
+- **Weekly**: System package updates (security updates)
+- **As needed**: When Supabase releases critical fixes
+
+#### Method 2: Manual Updates
+
+If you prefer manual control:
+
 **Pull Latest Images**
 ```bash
 cd /srv/supabase
@@ -318,6 +347,99 @@ docker compose up -d
 ```bash
 docker compose pull --dry-run
 # Shows which images would be updated
+```
+
+**Update System Packages**
+```bash
+sudo apt update && sudo apt upgrade -y
+```
+
+#### Update Best Practices
+
+1. **Before Updating:**
+   ```bash
+   # Create database backup
+   cd /srv/supabase
+   mkdir -p backups
+   docker compose exec -T db pg_dump -U postgres -Fc -d postgres > "backups/db-$(date +%F).dump"
+   
+   # Backup config files
+   cp .env backups/.env.backup
+   cp docker-compose.override.yml backups/docker-compose.override.yml.backup
+   ```
+
+2. **During Updates:**
+   - Updates typically take 2-5 minutes
+   - Services restart automatically
+   - Active connections may be briefly interrupted
+   - Database data is always preserved
+
+3. **After Updating:**
+   ```bash
+   # Verify all containers are healthy
+   docker compose ps
+   
+   # Check for errors
+   docker compose logs --tail=50
+   
+   # Test access to Studio and API
+   curl http://YOUR-VM-IP:3000
+   curl http://YOUR-VM-IP:8000
+   ```
+
+4. **Rollback if Needed:**
+   ```bash
+   cd /srv/supabase
+   
+   # Stop current containers
+   docker compose down
+   
+   # Restore config
+   cp backups/.env.backup .env
+   
+   # Restore database (if needed)
+   cat backups/db-YYYY-MM-DD.dump | docker compose exec -T db pg_restore -U postgres -d postgres --clean
+   
+   # Start services
+   docker compose up -d
+   ```
+
+#### Update Troubleshooting
+
+**Container won't start after update:**
+```bash
+# Check specific container logs
+docker compose logs <container-name>
+
+# Force recreate all containers
+docker compose up -d --force-recreate
+
+# If database is corrupted, restore from backup
+cat backups/db-latest.dump | docker compose exec -T db pg_restore -U postgres -d postgres --clean
+```
+
+**New version breaks compatibility:**
+```bash
+# Pin to specific working version in docker-compose.yml
+# Example: supabase/studio:20241020-abc123 instead of :latest
+nano docker-compose.yml
+
+# Then redeploy
+docker compose down
+docker compose up -d
+```
+
+**Out of disk space during update:**
+```bash
+# Remove old unused images
+docker image prune -a
+
+# Check Docker disk usage
+docker system df
+
+# Clean up old backups
+cd /srv/supabase/backups
+ls -lt | tail -n +6 | awk '{print $NF}' | xargs rm -f
 ```
 
 ### Troubleshooting Commands

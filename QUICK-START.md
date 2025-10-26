@@ -200,7 +200,13 @@ docker compose down                 # Stop and remove containers (keeps data)
 docker compose down -v              # ⚠️ DELETES ALL DATA!
 ```
 
-**Update Supabase**
+**Update Supabase (Automated)**
+```bash
+sudo bash -c 'cd /tmp && curl -fsSL https://raw.githubusercontent.com/wattfource/automated-supbase-install-unraid/main/update-supabase.sh -o update-supabase.sh && chmod +x update-supabase.sh && ./update-supabase.sh'
+# Handles backups, updates, and health checks automatically
+```
+
+**Update Supabase (Manual)**
 ```bash
 docker compose pull                 # Download updates
 docker compose up -d                # Apply updates
