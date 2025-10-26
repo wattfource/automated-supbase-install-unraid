@@ -948,6 +948,220 @@ done
 
 log "Containers deployed successfully"
 
+# Create helper scripts
+print_step_header "◉" "CREATING HELPER SCRIPTS"
+echo
+
+HELPER_DIR="/srv/supabase/scripts"
+mkdir -p "$HELPER_DIR"
+
+print_info "Creating diagnostic script..."
+cat > "${HELPER_DIR}/diagnostic.sh" << 'DIAGNOSTIC_EOF'
+#!/bin/bash
+cd /srv/supabase
+
+echo "════════════════════════════════════════════════════════"
+echo "SUPABASE SYSTEM DIAGNOSTIC REPORT"
+echo "Generated: $(date)"
+echo "════════════════════════════════════════════════════════"
+echo ""
+
+echo "=== CONTAINER STATUS ==="
+sudo docker compose ps
+echo ""
+
+echo "=== PORT BINDINGS ==="
+sudo docker compose ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}"
+echo ""
+
+echo "=== DOCKER COMPOSE OVERRIDE ==="
+cat docker-compose.override.yml
+echo ""
+
+echo "=== ENVIRONMENT KEYS (lengths only) ==="
+echo "Checking encryption key formats..."
+for var in VAULT_ENC_KEY SECRET_KEY_BASE PG_META_CRYPTO_KEY JWT_SECRET; do
+    if sudo grep -q "^${var}=" .env 2>/dev/null; then
+        value=$(sudo grep "^${var}=" .env | cut -d= -f2)
+        length=${#value}
+        # Check for URL-safe vs standard base64
+        if echo "$value" | grep -q "[-_]"; then
+            format="URL-safe (has - or _)"
+        elif echo "$value" | grep -q "[+/]"; then
+            format="Standard (has + or /)"
+        else
+            format="Unknown"
+        fi
+        echo "  $var: ${length} chars, Format: $format"
+    else
+        echo "  $var: MISSING"
+    fi
+done
+echo ""
+
+echo "=== POOLER STATUS & LOGS (last 30 lines) ==="
+sudo docker compose ps supavisor
+echo ""
+sudo docker logs supabase-pooler --tail 30 2>&1
+echo ""
+
+echo "=== KONG STATUS & HEALTH ==="
+sudo docker compose ps kong
+echo ""
+sudo docker logs supabase-kong --tail 15 2>&1 | grep -E "(error|ERROR|warn|WARN|notice.*started|healthy)" || echo "No recent errors or warnings"
+echo ""
+
+echo "=== STUDIO ACCESS TEST ==="
+if curl -s -o /dev/null -w "%{http_code}" http://localhost:3000 2>/dev/null | grep -q "200\|301\|302\|401"; then
+    echo "✓ Studio accessible on port 3000"
+else
+    echo "✗ Studio not accessible on port 3000"
+fi
+echo ""
+
+echo "=== API GATEWAY ACCESS TEST ==="
+if curl -s -o /dev/null -w "%{http_code}" http://localhost:8000 2>/dev/null | grep -q "200\|401"; then
+    echo "✓ Kong accessible on port 8000"
+else
+    echo "✗ Kong not accessible on port 8000"
+fi
+echo ""
+
+echo "=== DATABASE HEALTH ==="
+if sudo docker compose exec -T db psql -U postgres -d postgres -c "SELECT version();" >/dev/null 2>&1; then
+    echo "✓ Database responsive"
+    sudo docker compose exec -T db psql -U postgres -d postgres -c "SELECT COUNT(*) as tables FROM information_schema.tables WHERE table_schema = 'public';" 2>/dev/null | grep -A 1 "tables"
+else
+    echo "✗ Database not responsive"
+fi
+echo ""
+
+echo "=== UNHEALTHY CONTAINERS ==="
+UNHEALTHY=$(sudo docker compose ps --format "{{.Name}} {{.Status}}" | grep -v "healthy" | grep -v "NAME" || echo "None")
+if [ "$UNHEALTHY" = "None" ]; then
+    echo "✓ All containers healthy"
+else
+    echo "$UNHEALTHY"
+fi
+echo ""
+
+echo "=== RESOURCE USAGE ==="
+sudo docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}" | head -n 15
+echo ""
+
+echo "════════════════════════════════════════════════════════"
+echo "END OF DIAGNOSTIC REPORT"
+echo "════════════════════════════════════════════════════════"
+DIAGNOSTIC_EOF
+
+chmod +x "${HELPER_DIR}/diagnostic.sh"
+log "Created diagnostic script at ${HELPER_DIR}/diagnostic.sh"
+print_success "Diagnostic script created"
+
+print_info "Creating update script..."
+cat > "${HELPER_DIR}/update.sh" << 'UPDATE_EOF'
+#!/usr/bin/env bash
+# Non-destructive update script for Supabase
+set -euo pipefail
+
+LOGFILE="/srv/supabase/scripts/update-$(date +%Y%m%d-%H%M%S).log"
+
+# Color definitions
+C_CYAN="\033[1;36m"
+C_GREEN="\033[1;32m"
+C_YELLOW="\033[1;33m"
+C_RED="\033[1;31m"
+C_WHITE="\033[1;37m"
+C_RESET="\033[0m"
+
+log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOGFILE" >/dev/null; }
+print_info() { printf "${C_CYAN}◉${C_RESET} %s\n" "$1"; }
+print_success() { printf "${C_GREEN}✓${C_RESET} %s\n" "$1"; }
+print_warning() { printf "${C_YELLOW}⚠${C_RESET} %s\n" "$1"; }
+print_error() { printf "${C_RED}✗${C_RESET} %s\n" "$1" >&2; }
+
+ask_yn() {
+  local p="$1" d="${2:-y}" a
+  while true; do
+        printf "${C_WHITE}%s${C_RESET} [" "$p" >&2
+        [[ "$d" = "y" ]] && printf "Y/n" >&2 || printf "y/N" >&2
+        printf "]: " >&2
+        read -r a </dev/tty || true
+        a="${a:-$d}"
+        case "$a" in
+            y|Y) echo y; return;;
+            n|N) echo n; return;;
+            *) print_warning "Please enter y or n";;
+        esac
+  done
+}
+
+[[ ${EUID:-$(id -u)} -eq 0 ]] || { print_error "Run as root: sudo bash $0"; exit 1; }
+
+cd /srv/supabase || exit 1
+
+printf "${C_CYAN}Supabase Update Script${C_RESET}\n\n"
+log "=== Update started ==="
+
+# Create backup
+BACKUP_DIR="/srv/supabase/backups"
+mkdir -p "$BACKUP_DIR"
+TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+
+print_info "Creating backups..."
+cp .env "${BACKUP_DIR}/.env.${TIMESTAMP}" 2>/dev/null || true
+cp docker-compose.override.yml "${BACKUP_DIR}/docker-compose.override.yml.${TIMESTAMP}" 2>/dev/null || true
+
+if [[ $(ask_yn "Create database backup?" "y") = "y" ]]; then
+    if docker compose ps db | grep -q "healthy"; then
+        print_info "Backing up database..."
+        docker compose exec -T db pg_dump -U postgres -Fc -d postgres > "${BACKUP_DIR}/db-${TIMESTAMP}.dump" 2>>"$LOGFILE" && \
+            print_success "Database backed up" || print_warning "Backup failed"
+    fi
+fi
+
+# Check for updates
+print_info "Checking for Supabase updates..."
+docker compose pull 2>&1 | tee -a "$LOGFILE"
+
+# Apply updates
+if [[ $(ask_yn "Apply updates?" "y") = "y" ]]; then
+    print_info "Applying updates..."
+    docker compose up -d >> "$LOGFILE" 2>&1 && print_success "Updated" || { print_error "Update failed"; exit 1; }
+    
+    print_info "Waiting for services..."
+    sleep 15
+    
+    print_info "Health check..."
+    docker compose ps
+    
+    # Cleanup old images
+    if [[ $(ask_yn "Remove old images?" "y") = "y" ]]; then
+        print_info "Cleaning up..."
+        docker image prune -f >> "$LOGFILE" 2>&1
+    fi
+    
+    # Keep only last 5 backups
+    cd "$BACKUP_DIR" && ls -t db-*.dump 2>/dev/null | tail -n +6 | xargs rm -f 2>/dev/null || true
+    
+    printf "\n${C_GREEN}✓ Update complete!${C_RESET}\n"
+    printf "Backups: ${C_CYAN}%s${C_RESET}\n" "$BACKUP_DIR"
+    printf "Log: ${C_CYAN}%s${C_RESET}\n\n" "$LOGFILE"
+else
+    print_warning "Update cancelled"
+fi
+
+log "=== Update completed ==="
+UPDATE_EOF
+
+chmod +x "${HELPER_DIR}/update.sh"
+log "Created update script at ${HELPER_DIR}/update.sh"
+print_success "Update script created"
+
+echo
+print_success "Helper scripts installed:"
+printf "  ${C_CYAN}%s${C_RESET}\n" "${HELPER_DIR}/diagnostic.sh"
+printf "  ${C_CYAN}%s${C_RESET}\n" "${HELPER_DIR}/update.sh"
 
 # Completion
 log "=== Installation completed successfully ==="
@@ -987,6 +1201,11 @@ print_config_line "API Endpoint" "$API_URL"
 print_config_line "VM IP Address" "$LOCAL_IP"
 echo
 
+printf "${C_WHITE}Helper Scripts (auto-installed):${C_RESET}\n"
+echo "  Diagnostic Report:   sudo bash /srv/supabase/scripts/diagnostic.sh"
+echo "  Update Supabase:     sudo bash /srv/supabase/scripts/update.sh"
+echo
+
 printf "${C_WHITE}Next Steps:${C_RESET}\n"
 echo "  1) Configure reverse proxy (optional) for SSL termination:"
 echo "     • $API_URL → http://${LOCAL_IP}:${KONG_HTTP_PORT} (enable WebSockets)"
@@ -995,7 +1214,8 @@ echo "  2) Or access directly:"
 echo "     • Studio Dashboard: http://${LOCAL_IP}:3000"
 echo "     • API Gateway: http://${LOCAL_IP}:${KONG_HTTP_PORT}"
 echo "     • Database Pooler: postgresql://postgres.${POOLER_TENANT_ID}:${POSTGRES_PASSWORD}@${LOCAL_IP}:6543/postgres"
-echo "  3) Test your API endpoint and visit Studio dashboard"
+echo "  3) Run diagnostics: sudo bash /srv/supabase/scripts/diagnostic.sh"
+echo "  4) Test your API endpoint and visit Studio dashboard"
 echo
 
 printf "${C_CYAN}Installation log: ${C_WHITE}$LOGFILE${C_RESET}\n"

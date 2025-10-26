@@ -241,6 +241,22 @@ docker system df                    # Disk usage
 docker compose up -d --force-recreate
 ```
 
+### Helper Scripts (Auto-Installed)
+
+The installer creates these helper scripts automatically:
+
+**Run diagnostics**
+```bash
+sudo bash /srv/supabase/scripts/diagnostic.sh
+# Comprehensive system report with health checks
+```
+
+**Quick update**
+```bash
+sudo bash /srv/supabase/scripts/update.sh
+# Automated backup + update workflow
+```
+
 ---
 
 ## Troubleshooting

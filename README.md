@@ -605,9 +605,47 @@ cp docker-compose.override.yml docker-compose.override.yml.backup
 - **Environment File**: `/srv/supabase/.env`
 - **Docker Compose**: `/srv/supabase/docker-compose.yml`
 - **Override Config**: `/srv/supabase/docker-compose.override.yml`
+- **Helper Scripts**: `/srv/supabase/scripts/` (diagnostic.sh, update.sh)
 - **Storage Mount**: `/mnt/unraid/supabase-storage/<APEX_DOMAIN>`
-- **Backup Files**: `/srv/supabase/.env.bak.*`
+- **Backup Directory**: `/srv/supabase/backups/`
 - **Installation Logs**: `/tmp/supabase-install-*.log`
+
+## Helper Scripts (Auto-Installed)
+
+The installer automatically creates two helper scripts for easy troubleshooting and maintenance:
+
+### Diagnostic Script
+**Location**: `/srv/supabase/scripts/diagnostic.sh`
+
+Generates a comprehensive system report including:
+- Container status and health
+- Port bindings
+- Encryption key formats
+- Service logs
+- Database connectivity
+- Resource usage
+
+**Usage:**
+```bash
+sudo bash /srv/supabase/scripts/diagnostic.sh
+```
+
+### Update Script
+**Location**: `/srv/supabase/scripts/update.sh`
+
+Simplified update process with automatic backups:
+- Creates config and database backups
+- Checks for new Docker images
+- Applies updates safely
+- Verifies service health
+- Cleans up old resources
+
+**Usage:**
+```bash
+sudo bash /srv/supabase/scripts/update.sh
+```
+
+These scripts are created during installation and are always available for maintenance.
 
 ## Requirements
 
