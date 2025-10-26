@@ -160,14 +160,15 @@ require_root() {
 
 # Secret Generation Functions
 # Following best practices for self-hosted Supabase:
-# - JWT secrets: Base64URL (no padding) - safe for URLs, JSON, .env files
-# - DB passwords: Base64URL (no padding) - safe for postgres:// DSN embedding
-# - Encryption keys: Standard Base64 (no padding) - required by crypto libraries (AES-GCM)
+# ALL secrets use Base64URL encoding (A-Za-z0-9-_ only, no padding)
+# This provides:
+# - URL safety: No special characters that break URLs or connection strings
+# - Consistency: Same encoding for all secrets across the stack
+# - Compatibility: Works with Supabase's crypto libraries (Erlang, Node.js)
+# - Security: 256-bit minimum entropy for encryption keys
 
-# Generate Base64URL (no padding): A-Za-z0-9-_ only, for JWTs and passwords
+# Generate Base64URL (no padding): A-Za-z0-9-_ only, ~256-bit entropy for 32 bytes
 gen_b64_url() { openssl rand "$1" 2>>"$LOGFILE" | base64 | tr '+/' '-_' | tr -d '=' | tr -d '\n'; }
-# Generate Standard Base64 (no padding): A-Za-z0-9+/ only, for encryption keys
-gen_b64_standard() { openssl rand "$1" 2>>"$LOGFILE" | base64 | tr -d '=' | tr -d '\n'; }
 # Helper for JWT generation (URL-safe)
 b64url() { openssl enc -base64 -A | tr '+/' '-_' | tr -d '='; }
 
@@ -241,31 +242,28 @@ log "Feature selection: Email=$ENABLE_EMAIL Phone=$ENABLE_PHONE Anonymous=$ENABL
 print_step_header "2" "GENERATING SECRETS"
 echo
 print_info "Generating crypto-secure secrets..."
-print_info "Using URL-safe encoding for JWTs/passwords, standard Base64 for encryption keys"
+print_info "Using URL-safe Base64 encoding (A-Za-z0-9-_) for all secrets"
+print_info "This ensures compatibility across all Supabase services"
 echo
 
-# JWT secrets and passwords: Base64URL (safe for URLs and connection strings)
-# JWT signing: 48 bytes = 384-bit entropy, Base64URL encoded (A-Za-z0-9-_)
+# ALL secrets use Base64URL (no padding) for consistency and compatibility
+# This is the format that works reliably with Supabase/Supavisor
+# JWT signing: 48 bytes = 384-bit entropy, Base64URL encoded
 JWT_SECRET="$(gen_b64_url 48)"
-# Database password: 32 bytes = 256-bit entropy, Base64URL (safe for DSN)
+# Database password: 32 bytes = 256-bit entropy
 POSTGRES_PASSWORD="$(gen_b64_url 32)"
-# Analytics tokens: 32 bytes = 256-bit entropy each, Base64URL
+# Encryption keys for AES-256: 32 bytes each = 256-bit keys (URL-safe)
+VAULT_ENC_KEY="$(gen_b64_url 32)"
+PG_META_CRYPTO_KEY="$(gen_b64_url 32)"
+SECRET_KEY_BASE="$(gen_b64_url 64)"
+# Analytics tokens: 32 bytes = 256-bit entropy each
 LOGFLARE_PUBLIC="$(gen_b64_url 32)"
 LOGFLARE_PRIVATE="$(gen_b64_url 32)"
-# Dashboard password: 16 bytes = 128-bit entropy, Base64URL
+# Dashboard password: 16 bytes = 128-bit entropy
 DASHBOARD_PASSWORD="$(gen_b64_url 16)"
 
-# Encryption keys: Standard Base64 (required by AES-GCM crypto libraries)
-# These contain +/ characters but are never exposed in URLs
-# VAULT_ENC_KEY: 32 bytes = 256-bit AES key for Supavisor
-VAULT_ENC_KEY="$(gen_b64_standard 32)"
-# SECRET_KEY_BASE: 64 bytes = 512-bit key for Realtime/Supavisor
-SECRET_KEY_BASE="$(gen_b64_standard 64)"
-# PG_META_CRYPTO_KEY: 32 bytes = 256-bit AES key for postgres-meta
-PG_META_CRYPTO_KEY="$(gen_b64_standard 32)"
-
-log "Generated: JWT_SECRET(48B URL-safe), POSTGRES_PASSWORD(32B URL-safe), VAULT_ENC_KEY(32B std), PG_META_CRYPTO_KEY(32B std), SECRET_KEY_BASE(64B std), LOGFLARE(32B URL-safe), DASHBOARD_PASSWORD(16B URL-safe)"
-print_success "All secrets generated successfully"
+log "Generated: JWT_SECRET(48B), POSTGRES_PASSWORD(32B), VAULT_ENC_KEY(32B), PG_META_CRYPTO_KEY(32B), SECRET_KEY_BASE(64B), LOGFLARE_PUBLIC(32B), LOGFLARE_PRIVATE(32B), DASHBOARD_PASSWORD(16B) - all URL-safe Base64"
+print_success "All secrets generated with URL-safe Base64 encoding"
 
 # STEP 3: Database Config
 print_step_header "3" "DATABASE CONFIG"
@@ -955,103 +953,333 @@ echo
 HELPER_DIR="/srv/supabase/scripts"
 mkdir -p "$HELPER_DIR"
 
-print_info "Creating diagnostic script..."
+print_info "Creating comprehensive diagnostic script..."
 cat > "${HELPER_DIR}/diagnostic.sh" << 'DIAGNOSTIC_EOF'
 #!/bin/bash
-cd /srv/supabase
+# Comprehensive Supabase Diagnostic Script
+# Captures everything needed for troubleshooting
 
-echo "════════════════════════════════════════════════════════"
-echo "SUPABASE SYSTEM DIAGNOSTIC REPORT"
+cd /srv/supabase 2>/dev/null || { echo "Error: /srv/supabase not found"; exit 1; }
+
+echo "════════════════════════════════════════════════════════════════════════════"
+echo "SUPABASE COMPREHENSIVE DIAGNOSTIC REPORT"
 echo "Generated: $(date)"
-echo "════════════════════════════════════════════════════════"
+echo "Hostname: $(hostname)"
+echo "User: $(whoami)"
+echo "════════════════════════════════════════════════════════════════════════════"
 echo ""
 
+# System Information
+echo "=== SYSTEM INFORMATION ==="
+echo "OS: $(cat /etc/os-release 2>/dev/null | grep PRETTY_NAME | cut -d'"' -f2)"
+echo "Kernel: $(uname -r)"
+echo "Uptime: $(uptime -p 2>/dev/null || uptime)"
+echo "CPU: $(grep -m1 'model name' /proc/cpuinfo | cut -d':' -f2 | xargs)"
+echo "CPU Cores: $(nproc)"
+echo "Total RAM: $(free -h | grep Mem | awk '{print $2}')"
+echo "Available RAM: $(free -h | grep Mem | awk '{print $7}')"
+df -h / | tail -1 | awk '{print "Root Disk: " $2 " total, " $4 " available (" $5 " used)"}'
+echo ""
+
+# Docker Information
+echo "=== DOCKER INFORMATION ==="
+echo "Docker Version: $(docker --version 2>/dev/null || echo 'Not installed')"
+echo "Docker Compose Version: $(docker compose version 2>/dev/null || echo 'Not installed')"
+echo "Docker Status: $(systemctl is-active docker 2>/dev/null || echo 'Unknown')"
+echo "Docker Root Dir: $(docker info 2>/dev/null | grep 'Docker Root Dir' | cut -d':' -f2 | xargs)"
+echo ""
+echo "Docker Disk Usage:"
+docker system df 2>/dev/null || echo "Unable to get Docker disk usage"
+echo ""
+
+# Network Information
+echo "=== NETWORK INFORMATION ==="
+echo "IP Addresses:"
+ip -4 addr show | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '127.0.0.1' | awk '{print "  " $1}'
+echo ""
+echo "DNS Servers:"
+grep nameserver /etc/resolv.conf 2>/dev/null | awk '{print "  " $2}' || echo "  Unable to read"
+echo ""
+echo "Active Listening Ports (Docker-related):"
+sudo ss -tulpn 2>/dev/null | grep -E "(docker|:3000|:8000|:8443|:6543|:4000)" | head -20 || echo "Unable to check ports"
+echo ""
+
+# Container Status
 echo "=== CONTAINER STATUS ==="
 sudo docker compose ps
 echo ""
 
-echo "=== PORT BINDINGS ==="
+echo "=== PORT BINDINGS (Detailed) ==="
 sudo docker compose ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}"
 echo ""
 
-echo "=== DOCKER COMPOSE OVERRIDE ==="
-cat docker-compose.override.yml
+echo "=== CONTAINER RESTART COUNTS ==="
+for container in $(sudo docker compose ps -q 2>/dev/null); do
+    name=$(sudo docker inspect --format='{{.Name}}' $container | sed 's/\///')
+    restarts=$(sudo docker inspect --format='{{.RestartCount}}' $container)
+    echo "  $name: $restarts restarts"
+done
 echo ""
 
-echo "=== ENVIRONMENT KEYS (lengths only) ==="
-echo "Checking encryption key formats..."
-for var in VAULT_ENC_KEY SECRET_KEY_BASE PG_META_CRYPTO_KEY JWT_SECRET; do
+# Configuration Files
+echo "=== DOCKER COMPOSE FILES ==="
+echo "--- docker-compose.yml (first 50 lines) ---"
+head -50 docker-compose.yml 2>/dev/null || echo "File not found"
+echo ""
+echo "--- docker-compose.override.yml ---"
+cat docker-compose.override.yml 2>/dev/null || echo "File not found"
+echo ""
+
+# Environment Variables (sanitized)
+echo "=== ENVIRONMENT VARIABLES (sanitized) ==="
+echo "Checking critical .env variables..."
+for var in POSTGRES_HOST POSTGRES_DB POSTGRES_PORT KONG_HTTP_PORT KONG_HTTPS_PORT \
+           SITE_URL API_EXTERNAL_URL SUPABASE_PUBLIC_URL \
+           ENABLE_EMAIL_SIGNUP ENABLE_PHONE_SIGNUP ENABLE_ANONYMOUS_USERS \
+           JWT_SECRET POSTGRES_PASSWORD VAULT_ENC_KEY SECRET_KEY_BASE PG_META_CRYPTO_KEY \
+           ANON_KEY SERVICE_ROLE_KEY DASHBOARD_USERNAME; do
     if sudo grep -q "^${var}=" .env 2>/dev/null; then
         value=$(sudo grep "^${var}=" .env | cut -d= -f2)
         length=${#value}
-        # Check for URL-safe vs standard base64
-        if echo "$value" | grep -q "[-_]"; then
-            format="URL-safe (has - or _)"
-        elif echo "$value" | grep -q "[+/]"; then
-            format="Standard (has + or /)"
-        else
-            format="Unknown"
-        fi
-        echo "  $var: ${length} chars, Format: $format"
+        # Check for sensitive variables
+        case "$var" in
+            *PASSWORD|*KEY|*SECRET|*TOKEN)
+                # Check encoding format
+                if echo "$value" | grep -q "[-_]"; then
+                    format="URL-safe base64"
+                elif echo "$value" | grep -q "[+/]"; then
+                    format="Standard base64"
+                elif echo "$value" | grep -q "^ey"; then
+                    format="JWT token"
+                else
+                    format="Unknown"
+                fi
+                echo "  ✓ $var: [REDACTED] (${length} chars, ${format})"
+                ;;
+            *)
+                echo "  ✓ $var: $value"
+                ;;
+        esac
     else
-        echo "  $var: MISSING"
+        echo "  ✗ $var: MISSING"
     fi
 done
 echo ""
 
-echo "=== POOLER STATUS & LOGS (last 30 lines) ==="
-sudo docker compose ps supavisor
+# Volume Mounts
+echo "=== VOLUME MOUNTS ==="
+echo "Docker Volumes:"
+sudo docker volume ls | grep supabase || echo "No supabase volumes found"
 echo ""
+echo "Storage Mount (if configured):"
+mount | grep supabase || echo "No supabase mounts found"
+echo ""
+if [ -d "/mnt/unraid" ]; then
+    echo "Unraid Mounts:"
+    ls -lah /mnt/unraid/ 2>/dev/null || echo "Unable to list /mnt/unraid"
+fi
+echo ""
+
+# Health Checks
+echo "=== DETAILED HEALTH STATUS ==="
+for service in db kong auth rest storage meta studio analytics realtime supavisor vector imgproxy functions; do
+    container="supabase-${service}"
+    if [ "$service" = "realtime" ]; then
+        container="realtime-dev.supabase-realtime"
+    elif [ "$service" = "functions" ]; then
+        container="supabase-edge-functions"
+    elif [ "$service" = "supavisor" ]; then
+        container="supabase-pooler"
+    fi
+    
+    if sudo docker ps --format "{{.Names}}" 2>/dev/null | grep -q "^${container}$"; then
+        status=$(sudo docker inspect --format='{{.State.Status}}' $container 2>/dev/null)
+        health=$(sudo docker inspect --format='{{.State.Health.Status}}' $container 2>/dev/null || echo "N/A")
+        started=$(sudo docker inspect --format='{{.State.StartedAt}}' $container 2>/dev/null)
+        echo "[$service]"
+        echo "  Status: $status"
+        echo "  Health: $health"
+        echo "  Started: $started"
+    else
+        echo "[$service] Container not found"
+    fi
+done
+echo ""
+
+# Service Connectivity Tests
+echo "=== SERVICE CONNECTIVITY TESTS ==="
+echo "Testing internal service connectivity..."
+echo -n "Studio (port 3000): "
+if curl -s -o /dev/null -w "%{http_code}" http://localhost:3000 2>/dev/null | grep -q "200\|301\|302\|401"; then
+    echo "✓ Accessible (HTTP $(curl -s -o /dev/null -w '%{http_code}' http://localhost:3000 2>/dev/null))"
+else
+    echo "✗ Not accessible"
+fi
+
+echo -n "Kong HTTP (port 8000): "
+if curl -s -o /dev/null -w "%{http_code}" http://localhost:8000 2>/dev/null | grep -q "200\|401"; then
+    echo "✓ Accessible (HTTP $(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000 2>/dev/null))"
+else
+    echo "✗ Not accessible"
+fi
+
+echo -n "Kong HTTPS (port 8443): "
+if curl -k -s -o /dev/null -w "%{http_code}" https://localhost:8443 2>/dev/null | grep -q "200\|401"; then
+    echo "✓ Accessible (HTTP $(curl -k -s -o /dev/null -w '%{http_code}' https://localhost:8443 2>/dev/null))"
+else
+    echo "✗ Not accessible"
+fi
+
+echo -n "Analytics (port 4000): "
+if curl -s -o /dev/null -w "%{http_code}" http://localhost:4000 2>/dev/null | grep -q "200\|404"; then
+    echo "✓ Accessible"
+else
+    echo "✗ Not accessible"
+fi
+
+echo -n "PostgreSQL (port 5432): "
+if sudo docker compose exec -T db pg_isready -U postgres >/dev/null 2>&1; then
+    echo "✓ Accepting connections"
+else
+    echo "✗ Not accepting connections"
+fi
+echo ""
+
+# Database Checks
+echo "=== DATABASE CHECKS ==="
+if sudo docker compose exec -T db psql -U postgres -d postgres -c "SELECT version();" >/dev/null 2>&1; then
+    echo "✓ Database is responsive"
+    echo ""
+    echo "PostgreSQL Version:"
+    sudo docker compose exec -T db psql -U postgres -d postgres -c "SELECT version();" 2>/dev/null | grep PostgreSQL
+    echo ""
+    echo "Database Size:"
+    sudo docker compose exec -T db psql -U postgres -d postgres -c "SELECT pg_size_pretty(pg_database_size('postgres')) as size;" 2>/dev/null | tail -2
+    echo ""
+    echo "Schema Summary:"
+    sudo docker compose exec -T db psql -U postgres -d postgres -c "SELECT schemaname, COUNT(*) as tables FROM pg_tables GROUP BY schemaname ORDER BY tables DESC;" 2>/dev/null | head -15
+    echo ""
+    echo "Active Connections:"
+    sudo docker compose exec -T db psql -U postgres -d postgres -c "SELECT count(*) as active_connections FROM pg_stat_activity WHERE state = 'active';" 2>/dev/null | tail -2
+    echo ""
+    echo "Recent Supabase Migrations:"
+    sudo docker compose exec -T db psql -U postgres -d postgres -c "SELECT version, inserted_at FROM supabase_migrations.schema_migrations ORDER BY inserted_at DESC LIMIT 5;" 2>/dev/null || echo "Migration table not found"
+else
+    echo "✗ Database is not responsive"
+fi
+echo ""
+
+# Critical Service Logs
+echo "=== SERVICE LOGS (last 30 lines each) ==="
+
+echo "--- SUPAVISOR (Pooler) ---"
+sudo docker compose ps supavisor 2>/dev/null
 sudo docker logs supabase-pooler --tail 30 2>&1
 echo ""
 
-echo "=== KONG STATUS & HEALTH ==="
-sudo docker compose ps kong
-echo ""
-sudo docker logs supabase-kong --tail 15 2>&1 | grep -E "(error|ERROR|warn|WARN|notice.*started|healthy)" || echo "No recent errors or warnings"
+echo "--- KONG (API Gateway) ---"
+sudo docker logs supabase-kong --tail 30 2>&1 | grep -E "(error|ERROR|warn|WARN|started|upstream)" || sudo docker logs supabase-kong --tail 15 2>&1
 echo ""
 
-echo "=== STUDIO ACCESS TEST ==="
-if curl -s -o /dev/null -w "%{http_code}" http://localhost:3000 2>/dev/null | grep -q "200\|301\|302\|401"; then
-    echo "✓ Studio accessible on port 3000"
-else
-    echo "✗ Studio not accessible on port 3000"
-fi
+echo "--- AUTH (GoTrue) ---"
+sudo docker logs supabase-auth --tail 30 2>&1 | grep -E "(error|ERROR|warn|WARN|started|migration)" || sudo docker logs supabase-auth --tail 15 2>&1
 echo ""
 
-echo "=== API GATEWAY ACCESS TEST ==="
-if curl -s -o /dev/null -w "%{http_code}" http://localhost:8000 2>/dev/null | grep -q "200\|401"; then
-    echo "✓ Kong accessible on port 8000"
-else
-    echo "✗ Kong not accessible on port 8000"
-fi
+echo "--- STORAGE ---"
+sudo docker logs supabase-storage --tail 20 2>&1 | grep -E "(error|ERROR|warn|WARN|started)" || sudo docker logs supabase-storage --tail 10 2>&1
 echo ""
 
-echo "=== DATABASE HEALTH ==="
-if sudo docker compose exec -T db psql -U postgres -d postgres -c "SELECT version();" >/dev/null 2>&1; then
-    echo "✓ Database responsive"
-    sudo docker compose exec -T db psql -U postgres -d postgres -c "SELECT COUNT(*) as tables FROM information_schema.tables WHERE table_schema = 'public';" 2>/dev/null | grep -A 1 "tables"
-else
-    echo "✗ Database not responsive"
-fi
+echo "--- REALTIME ---"
+sudo docker logs realtime-dev.supabase-realtime --tail 20 2>&1 | grep -E "(error|ERROR|warn|WARN|started)" || sudo docker logs realtime-dev.supabase-realtime --tail 10 2>&1
 echo ""
 
-echo "=== UNHEALTHY CONTAINERS ==="
-UNHEALTHY=$(sudo docker compose ps --format "{{.Name}} {{.Status}}" | grep -v "healthy" | grep -v "NAME" || echo "None")
-if [ "$UNHEALTHY" = "None" ]; then
-    echo "✓ All containers healthy"
-else
-    echo "$UNHEALTHY"
-fi
+echo "--- DATABASE (postgres) ---"
+sudo docker logs supabase-db --tail 30 2>&1 | grep -E "(ERROR|FATAL|WARN|ready)" || sudo docker logs supabase-db --tail 15 2>&1
 echo ""
 
+# Resource Usage
 echo "=== RESOURCE USAGE ==="
-sudo docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}" | head -n 15
+echo "Current container resource consumption:"
+sudo docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}\t{{.NetIO}}\t{{.BlockIO}}"
 echo ""
 
-echo "════════════════════════════════════════════════════════"
+echo "System Memory:"
+free -h
+echo ""
+
+echo "Disk Space:"
+df -h | grep -E "Filesystem|/srv|/mnt|/$"
+echo ""
+
+# Error Pattern Detection
+echo "=== ERROR PATTERN DETECTION ==="
+echo "Scanning logs for common issues..."
+
+# Supavisor errors
+POOLER_ERRORS=$(sudo docker logs supabase-pooler 2>&1 | grep -i "error\|badarg\|crash" | wc -l)
+if [ "$POOLER_ERRORS" -gt 0 ]; then
+    echo "⚠ Found $POOLER_ERRORS error(s) in Supavisor logs"
+    sudo docker logs supabase-pooler 2>&1 | grep -i "error\|badarg" | tail -5
+fi
+
+# Kong errors
+KONG_ERRORS=$(sudo docker logs supabase-kong 2>&1 | grep -iE "error|failed|timeout" | wc -l)
+if [ "$KONG_ERRORS" -gt 5 ]; then
+    echo "⚠ Found $KONG_ERRORS error(s) in Kong logs"
+fi
+
+# Database errors
+DB_ERRORS=$(sudo docker logs supabase-db 2>&1 | grep -iE "error|fatal" | wc -l)
+if [ "$DB_ERRORS" -gt 0 ]; then
+    echo "⚠ Found $DB_ERRORS error(s) in Database logs"
+fi
+
+if [ "$POOLER_ERRORS" -eq 0 ] && [ "$KONG_ERRORS" -lt 5 ] && [ "$DB_ERRORS" -eq 0 ]; then
+    echo "✓ No critical errors detected in logs"
+fi
+echo ""
+
+# Summary
+echo "=== DIAGNOSTIC SUMMARY ==="
+TOTAL_CONTAINERS=$(sudo docker compose ps -q | wc -l)
+HEALTHY_CONTAINERS=$(sudo docker compose ps | grep healthy | wc -l)
+RUNNING_CONTAINERS=$(sudo docker compose ps | grep "Up" | wc -l)
+
+echo "Containers: $RUNNING_CONTAINERS running, $HEALTHY_CONTAINERS healthy, $TOTAL_CONTAINERS total"
+echo ""
+
+# Unhealthy containers
+UNHEALTHY=$(sudo docker compose ps --format "{{.Name}} {{.Status}}" | grep -v "healthy" | grep -v "NAME" | grep -v "^$")
+if [ -n "$UNHEALTHY" ]; then
+    echo "⚠ Containers needing attention:"
+    echo "$UNHEALTHY"
+else
+    echo "✓ All containers appear healthy"
+fi
+echo ""
+
+# Recommendations
+echo "=== RECOMMENDATIONS ==="
+if [ "$POOLER_ERRORS" -gt 0 ]; then
+    echo "• Supavisor has errors - check encryption key formats in .env"
+fi
+if [ "$DB_ERRORS" -gt 5 ]; then
+    echo "• Database has errors - check logs: docker compose logs db"
+fi
+FREE_SPACE=$(df -h / | tail -1 | awk '{print $4}' | sed 's/G//')
+if [ "${FREE_SPACE%%.*}" -lt 10 ]; then
+    echo "• Low disk space - consider cleaning up: docker system prune"
+fi
+AVAILABLE_MEM=$(free -g | grep Mem | awk '{print $7}')
+if [ "$AVAILABLE_MEM" -lt 2 ]; then
+    echo "• Low available memory - may impact performance"
+fi
+echo ""
+
+echo "════════════════════════════════════════════════════════════════════════════"
 echo "END OF DIAGNOSTIC REPORT"
-echo "════════════════════════════════════════════════════════"
+echo "Save this output for troubleshooting: ./diagnostic.sh > diagnostic-report.txt"
+echo "════════════════════════════════════════════════════════════════════════════"
 DIAGNOSTIC_EOF
 
 chmod +x "${HELPER_DIR}/diagnostic.sh"
