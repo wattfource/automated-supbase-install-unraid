@@ -230,6 +230,30 @@ sudo ss -tulpn | grep :8000         # Find what's using port
 docker compose exec -T db pg_dump -U postgres -Fc -d postgres > backup.dump
 ```
 
+**Backup from Supabase Cloud**
+```bash
+# ⚠️  PREREQUISITE: Enable IPv4 Direct Connection add-on in Supabase Cloud first!
+#    Settings → Add-ons → IPv4 Address (paid add-on)
+
+# Download backup-from-cloud utility (once)
+sudo bash -c 'cd /tmp && curl -fsSL https://raw.githubusercontent.com/wattfource/automated-supbase-install-unraid/main/backup-from-cloud.sh -o backup-from-cloud.sh && chmod +x backup-from-cloud.sh && mv backup-from-cloud.sh /srv/supabase/scripts/'
+
+# Backup directly from Supabase Cloud (prompts for credentials)
+sudo bash /srv/supabase/scripts/backup-from-cloud.sh
+
+# Or backup and restore in one command
+sudo bash /srv/supabase/scripts/backup-from-cloud.sh --auto-restore
+```
+
+**Database restore**
+```bash
+# Download restore utility (once)
+sudo bash -c 'cd /tmp && curl -fsSL https://raw.githubusercontent.com/wattfource/automated-supbase-install-unraid/main/restore-database.sh -o restore-database.sh && chmod +x restore-database.sh && mv restore-database.sh /srv/supabase/scripts/'
+
+# Restore any backup (auto-detects format)
+sudo bash /srv/supabase/scripts/restore-database.sh /tmp/backup.dump
+```
+
 **Check resources**
 ```bash
 docker stats                        # CPU/memory usage
@@ -243,7 +267,7 @@ docker compose up -d --force-recreate
 
 ### Helper Scripts (Auto-Installed)
 
-The installer creates these helper scripts automatically:
+The installer automatically downloads these helper scripts to `/srv/supabase/scripts/`:
 
 **Run diagnostics**
 ```bash
@@ -255,6 +279,39 @@ sudo bash /srv/supabase/scripts/diagnostic.sh
 ```bash
 sudo bash /srv/supabase/scripts/update.sh
 # Automated backup + update workflow
+```
+
+**Backup from Supabase Cloud**
+```bash
+# ⚠️  Requires IPv4 Direct Connection add-on in Supabase Cloud (paid)
+
+# Download cloud backup utility
+sudo bash -c 'cd /tmp && curl -fsSL https://raw.githubusercontent.com/wattfource/automated-supbase-install-unraid/main/backup-from-cloud.sh -o backup-from-cloud.sh && chmod +x backup-from-cloud.sh && mv backup-from-cloud.sh /srv/supabase/scripts/'
+
+# Backup from Supabase Cloud (SSL connection)
+sudo bash /srv/supabase/scripts/backup-from-cloud.sh
+# Prompts for credentials, saves to /srv/supabase/backups/
+
+# Or backup and restore in one step
+sudo bash /srv/supabase/scripts/backup-from-cloud.sh --auto-restore
+```
+
+**Database restore**
+```bash
+# Download restore utility
+sudo bash -c 'cd /tmp && curl -fsSL https://raw.githubusercontent.com/wattfource/automated-supbase-install-unraid/main/restore-database.sh -o restore-database.sh && chmod +x restore-database.sh && mv restore-database.sh /srv/supabase/scripts/'
+
+# Restore from backup
+sudo bash /srv/supabase/scripts/restore-database.sh /tmp/backup.dump
+# Supports: .dump, .backup, .sql, .sql.gz
+# Auto-creates safety backup, verifies health, restarts services
+```
+
+**Update backup/restore utilities**
+```bash
+# If time has elapsed since installation, get the latest versions:
+# Downloads + overwrites with latest from repo
+sudo bash -c 'cd /srv/supabase/scripts && curl -fsSL https://raw.githubusercontent.com/wattfource/automated-supbase-install-unraid/main/backup-from-cloud.sh -o backup-from-cloud.sh && curl -fsSL https://raw.githubusercontent.com/wattfource/automated-supbase-install-unraid/main/restore-database.sh -o restore-database.sh && chmod +x backup-from-cloud.sh restore-database.sh && echo "✓ Utilities updated"'
 ```
 
 ---

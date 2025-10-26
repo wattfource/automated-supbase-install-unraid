@@ -1395,10 +1395,36 @@ chmod +x "${HELPER_DIR}/update.sh"
 log "Created update script at ${HELPER_DIR}/update.sh"
 print_success "Update script created"
 
+print_info "Downloading backup and restore utilities..."
+
+# Download backup-from-cloud.sh
+if curl -fsSL "https://raw.githubusercontent.com/wattfource/automated-supbase-install-unraid/main/backup-from-cloud.sh" \
+    -o "${HELPER_DIR}/backup-from-cloud.sh" 2>>"$LOGFILE"; then
+    chmod +x "${HELPER_DIR}/backup-from-cloud.sh"
+    log "Downloaded backup-from-cloud.sh"
+    print_success "Cloud backup utility installed"
+else
+    print_warning "Failed to download backup-from-cloud.sh"
+    log "Failed to download backup-from-cloud.sh"
+fi
+
+# Download restore-database.sh
+if curl -fsSL "https://raw.githubusercontent.com/wattfource/automated-supbase-install-unraid/main/restore-database.sh" \
+    -o "${HELPER_DIR}/restore-database.sh" 2>>"$LOGFILE"; then
+    chmod +x "${HELPER_DIR}/restore-database.sh"
+    log "Downloaded restore-database.sh"
+    print_success "Database restore utility installed"
+else
+    print_warning "Failed to download restore-database.sh"
+    log "Failed to download restore-database.sh"
+fi
+
 echo
 print_success "Helper scripts installed:"
 printf "  ${C_CYAN}%s${C_RESET}\n" "${HELPER_DIR}/diagnostic.sh"
 printf "  ${C_CYAN}%s${C_RESET}\n" "${HELPER_DIR}/update.sh"
+printf "  ${C_CYAN}%s${C_RESET}\n" "${HELPER_DIR}/backup-from-cloud.sh"
+printf "  ${C_CYAN}%s${C_RESET}\n" "${HELPER_DIR}/restore-database.sh"
 
 # Completion
 log "=== Installation completed successfully ==="
@@ -1441,6 +1467,8 @@ echo
 printf "${C_WHITE}Helper Scripts (auto-installed):${C_RESET}\n"
 echo "  Diagnostic Report:   sudo bash /srv/supabase/scripts/diagnostic.sh"
 echo "  Update Supabase:     sudo bash /srv/supabase/scripts/update.sh"
+echo "  Backup from Cloud:   sudo bash /srv/supabase/scripts/backup-from-cloud.sh"
+echo "  Restore Database:    sudo bash /srv/supabase/scripts/restore-database.sh"
 echo
 
 printf "${C_WHITE}Next Steps:${C_RESET}\n"
