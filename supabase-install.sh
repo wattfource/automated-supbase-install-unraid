@@ -162,11 +162,13 @@ require_root() {
 # Following best practices for self-hosted Supabase:
 # - JWT secrets: Base64URL (no padding) - safe for URLs, JSON, .env files
 # - DB passwords: Base64URL (no padding) - safe for postgres:// DSN embedding
-# - Encryption keys: Base64URL (no padding) - consistent encoding, AES-256 compatible
+# - Encryption keys: Standard Base64 (no padding) - required by crypto libraries (AES-GCM)
 
-# Generate Base64URL (no padding): A-Za-z0-9-_ only, ~256-bit entropy for 32 bytes
-gen_b64() { openssl rand "$1" 2>>"$LOGFILE" | base64 | tr '+/' '-_' | tr -d '=' | tr -d '\n'; }
-# Helper for JWT generation (same as gen_b64, kept for clarity)
+# Generate Base64URL (no padding): A-Za-z0-9-_ only, for JWTs and passwords
+gen_b64_url() { openssl rand "$1" 2>>"$LOGFILE" | base64 | tr '+/' '-_' | tr -d '=' | tr -d '\n'; }
+# Generate Standard Base64 (no padding): A-Za-z0-9+/ only, for encryption keys
+gen_b64_standard() { openssl rand "$1" 2>>"$LOGFILE" | base64 | tr -d '=' | tr -d '\n'; }
+# Helper for JWT generation (URL-safe)
 b64url() { openssl enc -base64 -A | tr '+/' '-_' | tr -d '='; }
 
 gen_jwt_for_role() {
@@ -183,8 +185,8 @@ gen_jwt_for_role() {
 
 upsert_env() {
     local k="$1" v="$2"
-    # All secrets use Base64URL (no padding): A-Za-z0-9-_ only
-    # Safe to write directly to .env without quoting (no special shell characters)
+    # Secrets use either Base64URL (A-Za-z0-9-_) or Standard Base64 (A-Za-z0-9+/)
+    # Both are safe to write directly to .env without quoting (no special shell characters)
     echo "${k}=${v}" >> .env
     log "Set env: $k"
 }
@@ -238,27 +240,32 @@ log "Feature selection: Email=$ENABLE_EMAIL Phone=$ENABLE_PHONE Anonymous=$ENABL
 # STEP 2: Generating Secrets
 print_step_header "2" "GENERATING SECRETS"
 echo
-print_info "Generating crypto-secure secrets (Base64URL, no padding)..."
-print_info "All secrets use URL-safe encoding: A-Za-z0-9-_ (no +/= characters)"
+print_info "Generating crypto-secure secrets..."
+print_info "Using URL-safe encoding for JWTs/passwords, standard Base64 for encryption keys"
 echo
 
-# All secrets use Base64URL (no padding) for consistency and safety
-# JWT signing: 48 bytes = 384-bit entropy, Base64URL encoded
-JWT_SECRET="$(gen_b64 48)"
-# Database password: 32 bytes = 256-bit entropy
-POSTGRES_PASSWORD="$(gen_b64 32)"
-# Encryption keys for AES-256: 32 bytes each = 256-bit keys
-VAULT_ENC_KEY="$(gen_b64 32)"
-PG_META_CRYPTO_KEY="$(gen_b64 32)"
-SECRET_KEY_BASE="$(gen_b64 64)"
-# Analytics tokens: 32 bytes = 256-bit entropy each
-LOGFLARE_PUBLIC="$(gen_b64 32)"
-LOGFLARE_PRIVATE="$(gen_b64 32)"
-# Dashboard password: 16 bytes = 128-bit entropy
-DASHBOARD_PASSWORD="$(gen_b64 16)"
+# JWT secrets and passwords: Base64URL (safe for URLs and connection strings)
+# JWT signing: 48 bytes = 384-bit entropy, Base64URL encoded (A-Za-z0-9-_)
+JWT_SECRET="$(gen_b64_url 48)"
+# Database password: 32 bytes = 256-bit entropy, Base64URL (safe for DSN)
+POSTGRES_PASSWORD="$(gen_b64_url 32)"
+# Analytics tokens: 32 bytes = 256-bit entropy each, Base64URL
+LOGFLARE_PUBLIC="$(gen_b64_url 32)"
+LOGFLARE_PRIVATE="$(gen_b64_url 32)"
+# Dashboard password: 16 bytes = 128-bit entropy, Base64URL
+DASHBOARD_PASSWORD="$(gen_b64_url 16)"
 
-log "Generated: JWT_SECRET(48B), POSTGRES_PASSWORD(32B), VAULT_ENC_KEY(32B), PG_META_CRYPTO_KEY(32B), SECRET_KEY_BASE(64B), LOGFLARE_PUBLIC(32B), LOGFLARE_PRIVATE(32B), DASHBOARD_PASSWORD(16B)"
-print_success "All secrets generated with Base64URL encoding"
+# Encryption keys: Standard Base64 (required by AES-GCM crypto libraries)
+# These contain +/ characters but are never exposed in URLs
+# VAULT_ENC_KEY: 32 bytes = 256-bit AES key for Supavisor
+VAULT_ENC_KEY="$(gen_b64_standard 32)"
+# SECRET_KEY_BASE: 64 bytes = 512-bit key for Realtime/Supavisor
+SECRET_KEY_BASE="$(gen_b64_standard 64)"
+# PG_META_CRYPTO_KEY: 32 bytes = 256-bit AES key for postgres-meta
+PG_META_CRYPTO_KEY="$(gen_b64_standard 32)"
+
+log "Generated: JWT_SECRET(48B URL-safe), POSTGRES_PASSWORD(32B URL-safe), VAULT_ENC_KEY(32B std), PG_META_CRYPTO_KEY(32B std), SECRET_KEY_BASE(64B std), LOGFLARE(32B URL-safe), DASHBOARD_PASSWORD(16B URL-safe)"
+print_success "All secrets generated successfully"
 
 # STEP 3: Database Config
 print_step_header "3" "DATABASE CONFIG"
