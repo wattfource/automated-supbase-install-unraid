@@ -158,10 +158,15 @@ require_root() {
     }
 }
 
-# Generate URL-safe base64 (no /, +, or = characters that break URLs)
-gen_b64() { openssl rand -base64 "$1" 2>>"$LOGFILE" | tr '+/' '-_' | tr -d '='; }
-# Generate standard base64 (for encryption keys that need standard base64 format)
-gen_b64_standard() { openssl rand -base64 "$1" 2>>"$LOGFILE" | tr -d '\n'; }
+# Secret Generation Functions
+# Following best practices for self-hosted Supabase:
+# - JWT secrets: Base64URL (no padding) - safe for URLs, JSON, .env files
+# - DB passwords: Base64URL (no padding) - safe for postgres:// DSN embedding
+# - Encryption keys: Base64URL (no padding) - consistent encoding, AES-256 compatible
+
+# Generate Base64URL (no padding): A-Za-z0-9-_ only, ~256-bit entropy for 32 bytes
+gen_b64() { openssl rand "$1" 2>>"$LOGFILE" | base64 | tr '+/' '-_' | tr -d '=' | tr -d '\n'; }
+# Helper for JWT generation (same as gen_b64, kept for clarity)
 b64url() { openssl enc -base64 -A | tr '+/' '-_' | tr -d '='; }
 
 gen_jwt_for_role() {
@@ -178,7 +183,8 @@ gen_jwt_for_role() {
 
 upsert_env() {
     local k="$1" v="$2"
-    # All secrets are now URL-safe, so we can write them directly
+    # All secrets use Base64URL (no padding): A-Za-z0-9-_ only
+    # Safe to write directly to .env without quoting (no special shell characters)
     echo "${k}=${v}" >> .env
     log "Set env: $k"
 }
@@ -232,20 +238,27 @@ log "Feature selection: Email=$ENABLE_EMAIL Phone=$ENABLE_PHONE Anonymous=$ENABL
 # STEP 2: Generating Secrets
 print_step_header "2" "GENERATING SECRETS"
 echo
-print_info "Generating crypto-secure secrets..."
+print_info "Generating crypto-secure secrets (Base64URL, no padding)..."
+print_info "All secrets use URL-safe encoding: A-Za-z0-9-_ (no +/= characters)"
+echo
 
-POSTGRES_PASSWORD="$(gen_b64 32)"
+# All secrets use Base64URL (no padding) for consistency and safety
+# JWT signing: 48 bytes = 384-bit entropy, Base64URL encoded
 JWT_SECRET="$(gen_b64 48)"
-# Encryption keys must use standard base64 (not URL-safe) for AES-GCM compatibility
-PG_META_CRYPTO_KEY="$(gen_b64_standard 32)"
-SECRET_KEY_BASE="$(gen_b64_standard 64)"
-VAULT_ENC_KEY="$(gen_b64_standard 32)"
+# Database password: 32 bytes = 256-bit entropy
+POSTGRES_PASSWORD="$(gen_b64 32)"
+# Encryption keys for AES-256: 32 bytes each = 256-bit keys
+VAULT_ENC_KEY="$(gen_b64 32)"
+PG_META_CRYPTO_KEY="$(gen_b64 32)"
+SECRET_KEY_BASE="$(gen_b64 64)"
+# Analytics tokens: 32 bytes = 256-bit entropy each
 LOGFLARE_PUBLIC="$(gen_b64 32)"
 LOGFLARE_PRIVATE="$(gen_b64 32)"
+# Dashboard password: 16 bytes = 128-bit entropy
 DASHBOARD_PASSWORD="$(gen_b64 16)"
 
-log "Generated: POSTGRES_PASSWORD, JWT_SECRET, PG_META_CRYPTO_KEY, SECRET_KEY_BASE, VAULT_ENC_KEY, LOGFLARE_PUBLIC, LOGFLARE_PRIVATE, DASHBOARD_PASSWORD"
-print_success "Secrets generated"
+log "Generated: JWT_SECRET(48B), POSTGRES_PASSWORD(32B), VAULT_ENC_KEY(32B), PG_META_CRYPTO_KEY(32B), SECRET_KEY_BASE(64B), LOGFLARE_PUBLIC(32B), LOGFLARE_PRIVATE(32B), DASHBOARD_PASSWORD(16B)"
+print_success "All secrets generated with Base64URL encoding"
 
 # STEP 3: Database Config
 print_step_header "3" "DATABASE CONFIG"
@@ -259,8 +272,11 @@ log "Database: host=$POSTGRES_HOST db=$POSTGRES_DB"
 # STEP 4: API Gateway Config
 print_step_header "4" "API GATEWAY CONFIG"
 echo
-KONG_HTTP_PORT=$(ask "Kong HTTP Port" "8000")
-KONG_HTTPS_PORT=$(ask "Kong HTTPS Port" "8443")
+# Kong ports are fixed at defaults (no need to customize)
+KONG_HTTP_PORT="8000"
+KONG_HTTPS_PORT="8443"
+print_info "Kong HTTP Port: ${KONG_HTTP_PORT}"
+print_info "Kong HTTPS Port: ${KONG_HTTPS_PORT}"
 
 log "Kong ports: HTTP=$KONG_HTTP_PORT HTTPS=$KONG_HTTPS_PORT"
 
