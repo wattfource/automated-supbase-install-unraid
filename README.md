@@ -239,7 +239,12 @@ These utilities help you migrate your database from Supabase Cloud to your self-
 **What you'll need:**
 1. Go to Settings → Database → Connection string
 2. Select "Direct connection" (port 5432, NOT pooled)
-3. Have ready: Host, Port, Database, User, Password
+3. Have ready the following (script will prompt):
+   - **Host**: `db.xxxxx.supabase.co` (hostname only, NO `https://`)
+   - **Port**: `5432`
+   - **Database**: `postgres`
+   - **User**: `postgres`
+   - **Password**: Your database password (can contain special characters)
 
 ### Migration Methods
 

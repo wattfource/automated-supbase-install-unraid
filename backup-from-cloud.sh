@@ -127,15 +127,17 @@ save_credentials() {
     
     local cred_file="/root/.supabase-cloud-credentials"
     
-    cat > "$cred_file" << EOF
+    # Use printf with %q to properly escape special characters
+    cat > "$cred_file" << 'EOF'
 # Supabase Cloud Credentials
 # Created: $(date)
-SUPABASE_CLOUD_HOST="$host"
-SUPABASE_CLOUD_PORT="$port"
-SUPABASE_CLOUD_DB="$db"
-SUPABASE_CLOUD_USER="$user"
-SUPABASE_CLOUD_PASS="$pass"
 EOF
+    
+    printf 'SUPABASE_CLOUD_HOST=%q\n' "$host" >> "$cred_file"
+    printf 'SUPABASE_CLOUD_PORT=%q\n' "$port" >> "$cred_file"
+    printf 'SUPABASE_CLOUD_DB=%q\n' "$db" >> "$cred_file"
+    printf 'SUPABASE_CLOUD_USER=%q\n' "$user" >> "$cred_file"
+    printf 'SUPABASE_CLOUD_PASS=%q\n' "$pass" >> "$cred_file"
     
     chmod 600 "$cred_file"
     log "Credentials saved to $cred_file"
@@ -291,7 +293,13 @@ printf "${C_YELLOW}Where to find your credentials (after enabling IPv4):${C_RESE
 echo "1. Go to Settings → Database → Connection string"
 echo "2. Select 'Direct connection' (port 5432, NOT pooled)"
 echo "3. Ensure 'IPv4 compatible' is shown"
-echo "4. Copy: Host, Port, Database, User, Password"
+echo "4. Copy these values:"
+echo "   • Host: Just the hostname (e.g. db.xxxxx.supabase.co)"
+echo "   • NO https:// prefix"
+echo "   • Port: 5432"
+echo "   • Database: postgres"
+echo "   • User: postgres"
+echo "   • Password: (can contain special characters)"
 echo
 
 # Try to load saved credentials
@@ -318,25 +326,29 @@ fi
 if [ "$USE_SAVED" = false ]; then
     printf "${C_WHITE}Enter Supabase Cloud credentials:${C_RESET}\n\n"
     
-    DB_HOST=$(ask "Host (e.g. db.abcdefghijklm.supabase.co)" "")
+    DB_HOST=$(ask "Host - hostname ONLY, no https:// (e.g. db.xxxxx.supabase.co)" "")
     while [ -z "$DB_HOST" ]; do
         print_error "Host cannot be empty"
-        DB_HOST=$(ask "Host" "")
+        DB_HOST=$(ask "Host (hostname only)" "")
     done
+    
+    # Strip https:// if user included it
+    DB_HOST="${DB_HOST#https://}"
+    DB_HOST="${DB_HOST#http://}"
     
     DB_PORT=$(ask "Port" "5432")
     DB_NAME=$(ask "Database" "postgres")
     DB_USER=$(ask "User" "postgres")
     
-    # Hide password input
-    printf "${C_WHITE}Password: ${C_RESET}" >&2
-    read -s DB_PASS </dev/tty
+    # Hide password input - read into variable safely
+    printf "${C_WHITE}Password (can contain special characters): ${C_RESET}" >&2
+    IFS= read -rs DB_PASS </dev/tty
     echo
     
     while [ -z "$DB_PASS" ]; do
         print_error "Password cannot be empty"
         printf "${C_WHITE}Password: ${C_RESET}" >&2
-        read -s DB_PASS </dev/tty
+        IFS= read -rs DB_PASS </dev/tty
         echo
     done
     
