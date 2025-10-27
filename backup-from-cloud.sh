@@ -195,11 +195,15 @@ backup_from_cloud() {
     print_warning "This may take several minutes depending on database size..."
     log "Starting pg_dump: host=$host port=$port db=$db output=$output_file"
     
-    # Use plain SQL format (most compatible, human-readable)
+    # Use plain SQL format - comprehensive backup of everything
+    # Includes: schemas, tables, functions, triggers, policies, extensions, data
     if PGPASSWORD="$pass" pg_dump -h "$host" -p "$port" -U "$user" -d "$db" \
         --format=plain \
         --no-owner \
         --no-acl \
+        --create \
+        --clean \
+        --if-exists \
         --file="$output_file" \
         2>&1 | tee -a "$LOGFILE"; then
         

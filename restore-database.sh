@@ -185,13 +185,24 @@ restore_custom_format() {
     local backup_file="$1"
     
     print_info "Restoring from PostgreSQL custom format..."
-    log "Restoring custom format: $backup_file"
+    log "Restoring custom format: $backup_file (mode: $RESTORE_MODE)"
     
     cd /srv/supabase || exit 1
     
-    # Use pg_restore with --clean to drop existing objects first
-    if cat "$backup_file" | docker compose exec -T db pg_restore -U postgres -d postgres --clean --if-exists --no-owner --no-acl 2>&1 | tee -a "$LOGFILE"; then
-        print_success "Database restored successfully"
+    local restore_flags="--clean --if-exists --no-owner --no-acl"
+    
+    if [ "$RESTORE_MODE" = "schema-only" ]; then
+        print_info "Filtering: Schema only (skipping data)"
+        restore_flags="$restore_flags --schema-only"
+    fi
+    
+    # Use pg_restore
+    if cat "$backup_file" | docker compose exec -T db pg_restore -U postgres -d postgres $restore_flags 2>&1 | tee -a "$LOGFILE"; then
+        if [ "$RESTORE_MODE" = "schema-only" ]; then
+            print_success "Schema restored successfully (no data)"
+        else
+            print_success "Database restored successfully (schema + data)"
+        fi
         log "Restore completed successfully"
         return 0
     else
@@ -206,19 +217,31 @@ restore_sql_format() {
     local backup_file="$1"
     
     print_info "Restoring from SQL format..."
-    log "Restoring SQL format: $backup_file"
+    log "Restoring SQL format: $backup_file (mode: $RESTORE_MODE)"
     
     cd /srv/supabase || exit 1
     
-    if cat "$backup_file" | docker compose exec -T db psql -U postgres -d postgres 2>&1 | tee -a "$LOGFILE"; then
-        print_success "Database restored successfully"
-        log "Restore completed successfully"
-        return 0
+    if [ "$RESTORE_MODE" = "schema-only" ]; then
+        print_info "Filtering: Schema only (skipping data)"
+        # Filter out INSERT, COPY data statements but keep schema
+        if grep -v "^COPY " "$backup_file" | grep -v "^INSERT INTO" | \
+           docker compose exec -T db psql -U postgres -d postgres 2>&1 | tee -a "$LOGFILE"; then
+            print_success "Schema restored successfully (no data)"
+            log "Schema-only restore completed"
+            return 0
+        fi
     else
-        print_error "Restore failed"
-        log "SQL restore failed"
-        return 1
+        # Full restore with data
+        if cat "$backup_file" | docker compose exec -T db psql -U postgres -d postgres 2>&1 | tee -a "$LOGFILE"; then
+            print_success "Database restored successfully (schema + data)"
+            log "Full restore completed successfully"
+            return 0
+        fi
     fi
+    
+    print_error "Restore failed"
+    log "SQL restore failed"
+    return 1
 }
 
 # Restore from compressed SQL
@@ -226,19 +249,31 @@ restore_sql_gz_format() {
     local backup_file="$1"
     
     print_info "Restoring from compressed SQL format..."
-    log "Restoring SQL.GZ format: $backup_file"
+    log "Restoring SQL.GZ format: $backup_file (mode: $RESTORE_MODE)"
     
     cd /srv/supabase || exit 1
     
-    if zcat "$backup_file" | docker compose exec -T db psql -U postgres -d postgres 2>&1 | tee -a "$LOGFILE"; then
-        print_success "Database restored successfully"
-        log "Restore completed successfully"
-        return 0
+    if [ "$RESTORE_MODE" = "schema-only" ]; then
+        print_info "Filtering: Schema only (skipping data)"
+        # Filter out INSERT, COPY data statements but keep schema
+        if zcat "$backup_file" | grep -v "^COPY " | grep -v "^INSERT INTO" | \
+           docker compose exec -T db psql -U postgres -d postgres 2>&1 | tee -a "$LOGFILE"; then
+            print_success "Schema restored successfully (no data)"
+            log "Schema-only restore completed"
+            return 0
+        fi
     else
-        print_error "Restore failed"
-        log "SQL.GZ restore failed"
-        return 1
+        # Full restore with data
+        if zcat "$backup_file" | docker compose exec -T db psql -U postgres -d postgres 2>&1 | tee -a "$LOGFILE"; then
+            print_success "Database restored successfully (schema + data)"
+            log "Full restore completed successfully"
+            return 0
+        fi
     fi
+    
+    print_error "Restore failed"
+    log "SQL.GZ restore failed"
+    return 1
 }
 
 # Verify database health
@@ -350,10 +385,43 @@ BACKUP_FORMAT=$(detect_backup_format "$BACKUP_FILE")
 print_info "Detected format: $BACKUP_FORMAT"
 log "Backup format: $BACKUP_FORMAT"
 
+# Ask what to restore
+echo
+print_info "What would you like to restore?"
+echo
+printf "${C_WHITE}1)${C_RESET} Schema only ${C_CYAN}(structure: tables, functions, policies - NO data)${C_RESET}\n"
+printf "   ├─ Best for: Fresh start with existing structure\n"
+printf "   └─ Result: Empty tables, all functions/policies in place\n"
+echo
+printf "${C_WHITE}2)${C_RESET} Schema + Data ${C_CYAN}(complete restore)${C_RESET}\n"
+printf "   ├─ Best for: Full migration from Supabase Cloud\n"
+printf "   └─ Result: Exact copy of source database\n"
+echo
+printf "${C_WHITE}Choose [1 or 2]: ${C_RESET}" >&2
+read -r RESTORE_CHOICE </dev/tty
+
+while [[ ! "$RESTORE_CHOICE" =~ ^[12]$ ]]; do
+    print_warning "Please enter 1 or 2"
+    printf "${C_WHITE}Choose [1 or 2]: ${C_RESET}" >&2
+    read -r RESTORE_CHOICE </dev/tty
+done
+
+if [ "$RESTORE_CHOICE" = "1" ]; then
+    RESTORE_MODE="schema-only"
+    print_info "Selected: Schema only (fresh start)"
+else
+    RESTORE_MODE="full"
+    print_info "Selected: Full restore (schema + data)"
+fi
+
 # Confirm restore
 echo
-print_warning "⚠️  WARNING: This will REPLACE your current database!"
-print_warning "⚠️  All existing data will be overwritten."
+print_warning "⚠️  WARNING: This will affect your current database!"
+if [ "$RESTORE_MODE" = "schema-only" ]; then
+    print_warning "⚠️  Existing tables will be dropped and recreated (empty)"
+else
+    print_warning "⚠️  All existing data will be replaced"
+fi
 echo
 print_info "A safety backup will be created first."
 echo
@@ -363,6 +431,8 @@ if [[ $(ask_yn "Do you want to continue with the restore?" "n") = "n" ]]; then
     log "Restore cancelled by user"
     exit 0
 fi
+
+log "Restore mode: $RESTORE_MODE"
 
 # Create safety backup
 SAFETY_BACKUP="/srv/supabase/backups/pre-restore-$(date +%Y%m%d-%H%M%S).dump"

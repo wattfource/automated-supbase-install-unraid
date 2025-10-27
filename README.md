@@ -230,6 +230,12 @@ Replace `VM-IP` with your VM's IP address (displayed at end of installation)
 
 These utilities help you migrate your database from Supabase Cloud to your self-hosted instance.
 
+**How it works:**
+- **Backup**: Downloads complete backup (schemas, tables, functions, policies, extensions, data)
+- **Restore**: You choose what to restore:
+  - **Schema only**: Fresh start with structure (no data)
+  - **Schema + data**: Complete migration
+
 ### Prerequisites
 
 ⚠️ **IPv4 Direct Connection Add-on** required in Supabase Cloud (paid add-on)
@@ -270,10 +276,12 @@ sudo bash /srv/supabase/scripts/backup-from-cloud.sh --auto-restore
 # 2. Transfer to your VM
 scp backup.sql user@vm-ip:/tmp/
 
-# 3. Restore
+# 3. Restore (script will ask: schema-only or schema+data)
 sudo bash /srv/supabase/scripts/restore-database.sh /tmp/backup.sql
 ```
-*Restore script creates safety backup, restarts services, verifies health*
+*Restore script offers two options:*
+- **Schema only**: Structure/tables/functions/policies (no data) - fresh start
+- **Schema + data**: Complete restore with all data
 
 ### Verify Migration
 
