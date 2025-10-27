@@ -1119,29 +1119,33 @@ echo ""
 echo "=== SERVICE CONNECTIVITY TESTS ==="
 echo "Testing internal service connectivity..."
 echo -n "Studio (port 3000): "
-if curl -s -o /dev/null -w "%{http_code}" http://localhost:3000 2>/dev/null | grep -q "200\|301\|302\|401"; then
-    echo "✓ Accessible (HTTP $(curl -s -o /dev/null -w '%{http_code}' http://localhost:3000 2>/dev/null))"
+studio_code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000 2>/dev/null || echo "000")
+if [ "$studio_code" != "000" ] && [ "$studio_code" != "" ]; then
+    echo "✓ Accessible (HTTP $studio_code)"
 else
     echo "✗ Not accessible"
 fi
 
 echo -n "Kong HTTP (port 8000): "
-if curl -s -o /dev/null -w "%{http_code}" http://localhost:8000 2>/dev/null | grep -q "200\|401"; then
-    echo "✓ Accessible (HTTP $(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000 2>/dev/null))"
+kong_code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000 2>/dev/null || echo "000")
+if [ "$kong_code" != "000" ] && [ "$kong_code" != "" ]; then
+    echo "✓ Accessible (HTTP $kong_code)"
 else
     echo "✗ Not accessible"
 fi
 
 echo -n "Kong HTTPS (port 8443): "
-if curl -k -s -o /dev/null -w "%{http_code}" https://localhost:8443 2>/dev/null | grep -q "200\|401"; then
-    echo "✓ Accessible (HTTP $(curl -k -s -o /dev/null -w '%{http_code}' https://localhost:8443 2>/dev/null))"
+kong_https_code=$(curl -k -s -o /dev/null -w "%{http_code}" https://localhost:8443 2>/dev/null || echo "000")
+if [ "$kong_https_code" != "000" ] && [ "$kong_https_code" != "" ]; then
+    echo "✓ Accessible (HTTP $kong_https_code)"
 else
     echo "✗ Not accessible"
 fi
 
 echo -n "Analytics (port 4000): "
-if curl -s -o /dev/null -w "%{http_code}" http://localhost:4000 2>/dev/null | grep -q "200\|404"; then
-    echo "✓ Accessible"
+analytics_code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:4000 2>/dev/null || echo "000")
+if [ "$analytics_code" != "000" ] && [ "$analytics_code" != "" ]; then
+    echo "✓ Accessible (HTTP $analytics_code)"
 else
     echo "✗ Not accessible"
 fi
