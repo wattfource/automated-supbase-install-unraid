@@ -279,7 +279,7 @@ print_info "You'll need your Supabase Cloud connection details"
 echo
 
 printf "${C_RED}⚠️  IMPORTANT PREREQUISITE:${C_RESET}\n"
-echo "   ${C_YELLOW}IPv4 Direct Connection Add-on is REQUIRED${C_RESET}"
+printf "   ${C_YELLOW}IPv4 Direct Connection Add-on is REQUIRED${C_RESET}\n"
 echo "   This is a paid add-on in Supabase Cloud"
 echo
 printf "${C_WHITE}To enable IPv4 add-on:${C_RESET}\n"
