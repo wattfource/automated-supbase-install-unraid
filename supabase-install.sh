@@ -294,29 +294,66 @@ print_info "Kong HTTPS Port: ${KONG_HTTPS_PORT}"
 
 log "Kong ports: HTTP=$KONG_HTTP_PORT HTTPS=$KONG_HTTPS_PORT"
 
-# STEP 5: Application URLs
-print_step_header "5" "APPLICATION URLS"
+# STEP 5: Application URLs & Email Auth Configuration  
+print_step_header "5" "APPLICATION URLS & EMAIL AUTH"
 echo
 
-# Get apex domain
+print_info "⚠️  Email Authentication Redirect Configuration"
+echo "When users verify their email, they'll be redirected to your application."
+echo "This must match your actual website domain."
+echo
+
+# Get apex domain  
 while :; do
-    APEX_FQDN=$(ask "Apex domain (REQUIRED, e.g. example.com)" "")
+    APEX_FQDN=$(ask "Your domain (e.g. example.com, NOT www.example.com)" "")
     if [[ -z "$APEX_FQDN" ]]; then
-        print_warning "Apex domain is required"
+        print_warning "Domain is required"
         continue
     fi
     if valid_domain "$APEX_FQDN" && [[ "$APEX_FQDN" != *.*.*.* ]]; then
         break
     else
-        print_warning "Enter a valid apex domain (e.g. example.com, not www.example.com)"
+        print_warning "Enter a valid domain (e.g. example.com)"
     fi
 done
 
-SITE_URL=$(ask "Frontend URL (SITE_URL)" "https://studio.${APEX_FQDN}")
-API_URL=$(ask "Supabase API URL (API_EXTERNAL_URL)" "https://api.${APEX_FQDN}")
-ADDITIONAL_REDIRECT=$(ask "Additional redirect URLs (comma-separated, optional)" "")
+echo
 
-log "URLs: apex=$APEX_FQDN site=$SITE_URL api=$API_URL"
+print_info "Website URL Configuration"
+USE_WWW=$(ask_yn "Will your website be served at www.${APEX_FQDN}?" "y")
+
+# Build primary Site URL based on www preference
+if [[ "$USE_WWW" = "y" ]]; then
+    SITE_URL="https://www.${APEX_FQDN}"
+else
+    SITE_URL="https://${APEX_FQDN}"
+fi
+
+echo
+
+print_info "Additional Subdomains for Authentication (optional)"
+echo "Examples: api.${APEX_FQDN}, dashboard.${APEX_FQDN}, admin.${APEX_FQDN}"
+ADDITIONAL_SUBDOMAINS=$(ask "Comma-separated list (or leave blank)" "")
+
+# Build additional redirect URLs
+ADDITIONAL_REDIRECT=""
+if [[ -n "$ADDITIONAL_SUBDOMAINS" ]]; then
+    ADDITIONAL_REDIRECT="$ADDITIONAL_SUBDOMAINS"
+fi
+
+# API endpoint
+API_URL=$(ask "Supabase API URL" "https://api.${APEX_FQDN}")
+
+echo
+print_success "✓ Authentication URLs Configured:"
+print_config_line "Primary Site URL (SITE_URL)" "$SITE_URL"
+print_config_line "API URL (API_EXTERNAL_URL)" "$API_URL"
+if [[ -n "$ADDITIONAL_REDIRECT" ]]; then
+    print_config_line "Additional Redirect URLs" "$ADDITIONAL_REDIRECT"
+fi
+echo
+
+log "URLs: apex=$APEX_FQDN site=$SITE_URL api=$API_URL additional=$ADDITIONAL_REDIRECT"
 
 # STEP 6: Email Auth Config
 print_step_header "6" "EMAIL AUTH CONFIG"
