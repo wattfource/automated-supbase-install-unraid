@@ -223,22 +223,24 @@ restore_sql_format() {
     
     if [ "$RESTORE_MODE" = "schema-only" ]; then
         print_info "Filtering: Schema only (skipping data)"
-        # Remove entire COPY blocks and problematic settings
-        # Removes: COPY...EOF blocks, invalid psql commands, problematic settings
+        # Remove entire COPY blocks using awk for reliability
+        # Also filter problematic settings and suppress known errors
         if cat "$backup_file" | \
-           sed '/^COPY /,/^\\\.$/d' | \
-           sed 's/\\restrict//g; s/\\unrestrict//g' | \
-           sed '/transaction_timeout/d; /app\.settings\.jwt_exp/d; /log_min_messages/d' | \
+           awk '/^COPY / {skip=1; next} skip && /^\\.$/ {skip=0; next} !skip' | \
+           grep -v "transaction_timeout" | \
+           grep -v "app.settings.jwt_exp" | \
+           grep -v "log_min_messages" | \
            docker compose exec -T db psql -U postgres -d postgres -v ON_ERROR_STOP=off 2>&1 | tee -a "$LOGFILE"; then
             print_success "Schema restored successfully (no data)"
             log "Schema-only restore completed"
             return 0
         fi
     else
-        # Full restore with data - still remove problematic settings
+        # Full restore with data - still filter problematic settings
         if cat "$backup_file" | \
-           sed 's/\\restrict//g; s/\\unrestrict//g' | \
-           sed '/transaction_timeout/d; /app\.settings\.jwt_exp/d; /log_min_messages/d' | \
+           grep -v "transaction_timeout" | \
+           grep -v "app.settings.jwt_exp" | \
+           grep -v "log_min_messages" | \
            docker compose exec -T db psql -U postgres -d postgres -v ON_ERROR_STOP=off 2>&1 | tee -a "$LOGFILE"; then
             print_success "Database restored successfully (schema + data)"
             log "Full restore completed successfully"
@@ -255,29 +257,31 @@ restore_sql_format() {
 restore_sql_gz_format() {
     local backup_file="$1"
     
-    print_info "Restoring from compressed SQL format..."
-    log "Restoring SQL.GZ format: $backup_file (mode: $RESTORE_MODE)"
+    print_info "Restoring from SQL format (plain text)..."
+    log "Restoring SQL format: $backup_file (mode: $RESTORE_MODE)"
     
     cd /srv/supabase || exit 1
     
     if [ "$RESTORE_MODE" = "schema-only" ]; then
         print_info "Filtering: Schema only (skipping data)"
-        # Remove entire COPY blocks and problematic settings
-        # Removes: COPY...EOF blocks, invalid psql commands, problematic settings
+        # Remove entire COPY blocks using awk for reliability
+        # Also filter problematic settings and suppress known errors
         if zcat "$backup_file" | \
-           sed '/^COPY /,/^\\\.$/d' | \
-           sed 's/\\restrict//g; s/\\unrestrict//g' | \
-           sed '/transaction_timeout/d; /app\.settings\.jwt_exp/d; /log_min_messages/d' | \
+           awk '/^COPY / {skip=1; next} skip && /^\\.$/ {skip=0; next} !skip' | \
+           grep -v "transaction_timeout" | \
+           grep -v "app.settings.jwt_exp" | \
+           grep -v "log_min_messages" | \
            docker compose exec -T db psql -U postgres -d postgres -v ON_ERROR_STOP=off 2>&1 | tee -a "$LOGFILE"; then
             print_success "Schema restored successfully (no data)"
             log "Schema-only restore completed"
             return 0
         fi
     else
-        # Full restore with data - still remove problematic settings
+        # Full restore with data - still filter problematic settings
         if zcat "$backup_file" | \
-           sed 's/\\restrict//g; s/\\unrestrict//g' | \
-           sed '/transaction_timeout/d; /app\.settings\.jwt_exp/d; /log_min_messages/d' | \
+           grep -v "transaction_timeout" | \
+           grep -v "app.settings.jwt_exp" | \
+           grep -v "log_min_messages" | \
            docker compose exec -T db psql -U postgres -d postgres -v ON_ERROR_STOP=off 2>&1 | tee -a "$LOGFILE"; then
             print_success "Database restored successfully (schema + data)"
             log "Full restore completed successfully"

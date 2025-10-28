@@ -207,11 +207,6 @@ backup_from_cloud() {
         --file="$output_file" \
         2>&1 | tee -a "$LOGFILE"; then
         
-        # Compress the SQL file
-        print_info "Compressing backup..."
-        gzip "$output_file"
-        output_file="${output_file}.gz"
-        
         local size=$(du -h "$output_file" | cut -f1)
         print_success "Backup completed: $output_file ($size)"
         log "Backup successful: $output_file (size: $size)"
@@ -424,13 +419,11 @@ printf "${C_GREEN}║                    BACKUP COMPLETED                       
 printf "${C_GREEN}╚════════════════════════════════════════════════════════════════╝${C_RESET}\n"
 echo
 
-# Update backup file path (it's now compressed)
-BACKUP_FILE="${BACKUP_FILE}.gz"
 BACKUP_SIZE=$(du -h "$BACKUP_FILE" | cut -f1)
 print_success "Cloud database backed up successfully"
 print_success "Backup saved to: $BACKUP_FILE"
 print_success "Backup size: $BACKUP_SIZE"
-print_success "Format: Compressed SQL (.sql.gz)"
+print_success "Format: Plain SQL (.sql)"
 echo
 
 # Offer to restore to local instance
