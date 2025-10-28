@@ -1,4 +1,4 @@
-# Supabase Self-Host Installer for Unraid
+# Automated Supabase Installation for Unraid
 
 Automated installer for deploying Supabase on Unraid infrastructure with a Debian 13 VM.
 
@@ -746,3 +746,15 @@ This is a community-maintained installer. For Supabase issues, visit: https://su
 ## License
 
 MIT License - Feel free to modify and distribute
+
+## 🚀 Quick Reference: Fixing Auth Redirects for Your Web App
+
+If your web app (like JW Writer) isn't receiving confirmation emails properly, you need to update the `SITE_URL` in Supabase auth configuration:
+
+```bash
+sudo bash /srv/supabase/scripts/update-supabase.sh
+```
+
+Select option `1` and enter your app URL (e.g., `https://www.jwscribe.com`)
+
+**Why?** Supabase needs to know where to redirect users after email confirmation. By default it's set to the local IP, not your production domain.
