@@ -294,16 +294,11 @@ echo "   3. Enable the IPv4 add-on"
 echo "   4. Wait for provisioning (few minutes)"
 echo
 printf "${C_YELLOW}Where to find your credentials (after enabling IPv4):${C_RESET}\n"
-echo "1. Go to Settings → Database → Connection string"
-echo "2. Select 'Direct connection' (port 5432, NOT pooled)"
-echo "3. Ensure 'IPv4 compatible' is shown"
-echo "4. Copy these values:"
-echo "   • Host: Just the hostname (e.g. db.xxxxx.supabase.co)"
-echo "   • NO https:// prefix"
-echo "   • Port: 5432"
-echo "   • Database: postgres"
-echo "   • User: postgres"
-echo "   • Password: (can contain special characters)"
+echo "1. Go to your Supabase project Dashboard"
+echo "2. Click 'Connect' (top of screen) → Connection String tab"
+echo "3. Select 'URI' and 'Direct connection' (port 5432, NOT pooled)"
+echo "4. Ensure 'IPv4 compatible' is shown"
+echo "5. Copy the values from the connection parameters shown"
 echo
 
 # Try to load saved credentials
@@ -328,32 +323,51 @@ fi
 
 # Prompt for credentials if not using saved
 if [ "$USE_SAVED" = false ]; then
-    printf "${C_WHITE}Enter Supabase Cloud credentials:${C_RESET}\n\n"
-    
-    DB_HOST=$(ask "Host - hostname ONLY, no https:// (e.g. db.xxxxx.supabase.co)" "")
-    while [ -z "$DB_HOST" ]; do
-        print_error "Host cannot be empty"
-        DB_HOST=$(ask "Host (hostname only)" "")
-    done
-    
-    # Strip https:// if user included it
-    DB_HOST="${DB_HOST#https://}"
-    DB_HOST="${DB_HOST#http://}"
-    
-    DB_PORT=$(ask "Port" "5432")
-    DB_NAME=$(ask "Database" "postgres")
-    DB_USER=$(ask "User" "postgres")
-    
-    # Hide password input - read into variable safely
-    printf "${C_WHITE}Password (can contain special characters): ${C_RESET}" >&2
-    IFS= read -rs DB_PASS </dev/tty
-    echo
-    
-    while [ -z "$DB_PASS" ]; do
-        print_error "Password cannot be empty"
+    while true; do
+        printf "${C_WHITE}Enter Supabase Cloud credentials:${C_RESET}\n\n"
+        
+        DB_HOST=$(ask "Host (e.g. db.wellwqtttzutdodypndt.supabase.co)" "")
+        while [ -z "$DB_HOST" ]; do
+            print_error "Host cannot be empty"
+            DB_HOST=$(ask "Host (e.g. db.xxxxx.supabase.co)" "")
+        done
+        
+        # Strip https:// or http:// if user included it
+        DB_HOST="${DB_HOST#https://}"
+        DB_HOST="${DB_HOST#http://}"
+        
+        DB_PORT=$(ask "Port" "5432")
+        DB_NAME=$(ask "Database" "postgres")
+        DB_USER=$(ask "User" "postgres")
+        
+        # Don't mask password - make it visible for easier verification
         printf "${C_WHITE}Password: ${C_RESET}" >&2
-        IFS= read -rs DB_PASS </dev/tty
+        IFS= read -r DB_PASS </dev/tty
         echo
+        
+        while [ -z "$DB_PASS" ]; do
+            print_error "Password cannot be empty"
+            printf "${C_WHITE}Password: ${C_RESET}" >&2
+            IFS= read -r DB_PASS </dev/tty
+            echo
+        done
+        
+        echo
+        
+        # Show connection string for confirmation
+        printf "${C_YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${C_RESET}\n"
+        printf "${C_WHITE}Please verify your connection string:${C_RESET}\n\n"
+        printf "${C_CYAN}postgresql://%s:%s@%s:%s/%s${C_RESET}\n\n" "$DB_USER" "[YOUR_PASSWORD]" "$DB_HOST" "$DB_PORT" "$DB_NAME"
+        printf "${C_YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${C_RESET}\n"
+        echo
+        
+        if [[ $(ask_yn "Does this look correct?" "y") = "y" ]]; then
+            break
+        else
+            echo
+            print_warning "Let's try again. Please check Supabase Dashboard > Connect (top of screen)"
+            echo
+        fi
     done
     
     echo
