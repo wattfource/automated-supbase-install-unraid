@@ -237,10 +237,21 @@ echo
 stty sane 2>/dev/null || true
 
 ENABLE_EMAIL=$(ask_yn "Enable Email Authentication?" "y")
-ENABLE_PHONE=$(ask_yn "Enable Phone Authentication?" "y")
+
+# Phone Authentication Configuration
+print_info "ℹ️  Phone Authentication uses SMS-based one-time passwords (OTP)"
+echo "When phone auth is enabled:"
+echo "  • Users can sign up/login using their phone number"
+echo "  • Supabase sends OTP codes via SMS (requires SMS provider setup)"
+echo "  • Supported providers: Twilio, Vonage, MessageBird, Textlocal"
+echo "  • You'll need to configure SMS credentials in update-supabase.sh later"
+echo "  • Note: Phone auth works but requires external SMS service (costs apply)"
+echo
+
+ENABLE_PHONE=$(ask_yn "Enable Phone Authentication?" "n")
 ENABLE_ANONYMOUS=$(ask_yn "Enable Anonymous Users?" "n")
 ENABLE_STORAGE=$(ask_yn "Enable Storage (file uploads)?" "y")
-ENABLE_REALTIME=$(ask_yn "Enable Realtime?" "y")
+ENABLE_REALTIME=$(ask_yn "Enable Realtime?" "n")
 ENABLE_EDGE=$(ask_yn "Enable Edge Functions?" "y")
 
 # Analytics is always enabled (required for Studio dashboard and monitoring)
@@ -392,9 +403,44 @@ log "Email: autoconfirm=$EMAIL_AUTOCONFIRM smtp_host=$RESEND_SMTP_HOST"
 # Phone Auth configuration (if enabled)
 if [[ "$ENABLE_PHONE" = "y" ]]; then
     ENABLE_PHONE_AUTOCONFIRM=$(ask_yn "Auto-confirm phone signups? (dev only)" "n")
+    
+    print_info "📱 Twilio SMS Provider Setup"
+    echo "To use phone authentication, you need a Twilio account:"
+    echo "  1. Sign up at: https://www.twilio.com"
+    echo "  2. Find your Account SID and Auth Token in Twilio Console"
+    echo "  3. Get a Twilio phone number for sending SMS"
+    echo
+    
+    TWILIO_ACCOUNT_SID=$(ask "Twilio Account SID (leave blank to skip)" "")
+    if [[ -n "$TWILIO_ACCOUNT_SID" ]]; then
+        TWILIO_AUTH_TOKEN=$(ask "Twilio Auth Token" "")
+        TWILIO_PHONE_NUMBER=$(ask "Twilio Phone Number (e.g., +1234567890)" "")
+    else
+        TWILIO_ACCOUNT_SID=""
+        TWILIO_AUTH_TOKEN=""
+        TWILIO_PHONE_NUMBER=""
+        print_warning "Skipping Twilio setup - you can configure it later in update-supabase.sh"
+    fi
 else
     ENABLE_PHONE_AUTOCONFIRM="false"
+    TWILIO_ACCOUNT_SID=""
+    TWILIO_AUTH_TOKEN=""
+    TWILIO_PHONE_NUMBER=""
 fi
+
+print_section "AUTHENTICATION & SECURITY"
+
+print_info "Current Settings:"
+printf "  ${C_CYAN}SITE_URL${C_RESET}: %s\n" "${SITE_URL:-(not set)}"
+printf "  ${C_CYAN}API_EXTERNAL_URL${C_RESET}: %s\n" "${API_EXTERNAL_URL:-(not set)}"
+printf "  ${C_CYAN}ADDITIONAL_REDIRECT_URLS${C_RESET}: %s\n" "${ADDITIONAL_REDIRECT_URLS:-(not set)}"
+printf "  ${C_CYAN}JWT_EXPIRY${C_RESET}: %s seconds\n" "${JWT_EXPIRY:-3600}"
+
+echo
+print_warning "⚠️  JWT Secret Rotation Notice:"
+echo "  If you change the JWT_SECRET below, it will invalidate all existing API keys."
+echo "  Any clients using ANON_KEY or SERVICE_ROLE_KEY will need to be updated."
+echo
 
 # STEP 7: Studio Configuration
 print_step_header "7" "STUDIO CONFIG"
@@ -502,12 +548,19 @@ if [[ "$ENABLE_STORAGE" = "y" ]]; then
     echo
 fi
 
+if [[ "$ENABLE_PHONE" = "y" ]] && [[ -n "$TWILIO_ACCOUNT_SID" ]]; then
+    printf "${C_WHITE}Twilio SMS Configuration:${C_RESET}\n"
+    print_config_line "Account SID" "${TWILIO_ACCOUNT_SID:0:10}..."
+    print_config_line "Phone Number" "$TWILIO_PHONE_NUMBER"
+    echo
+fi
+
 printf "${C_WHITE}Network Access:${C_RESET}\n"
 print_config_line "All Ports" "Network accessible (0.0.0.0)"
 print_config_line "Kong HTTP" "0.0.0.0:${KONG_HTTP_PORT}"
 print_config_line "Kong HTTPS" "0.0.0.0:${KONG_HTTPS_PORT}"
 print_config_line "Supavisor Pooler" "0.0.0.0:6543"
-print_config_line "Studio Dashboard" "0.0.0.0:3000"
+# Studio Dashboard is internal-only (not exposed publicly)
 echo
 
 if [[ $(ask_yn "Proceed with installation?" "y") = "n" ]]; then
@@ -697,6 +750,14 @@ upsert_env ENABLE_ANONYMOUS_USERS "$([[ "$ENABLE_ANONYMOUS" = "y" ]] && echo tru
 # Phone auth
 upsert_env ENABLE_PHONE_SIGNUP "$([[ "$ENABLE_PHONE" = "y" ]] && echo true || echo false)"
 upsert_env ENABLE_PHONE_AUTOCONFIRM "$([[ "$ENABLE_PHONE_AUTOCONFIRM" = "y" ]] && echo true || echo false)"
+
+# Twilio SMS Provider (if configured)
+if [[ -n "$TWILIO_ACCOUNT_SID" ]]; then
+    upsert_env TWILIO_ACCOUNT_SID "$TWILIO_ACCOUNT_SID"
+    upsert_env TWILIO_AUTH_TOKEN "$TWILIO_AUTH_TOKEN"
+    upsert_env TWILIO_PHONE_NUMBER "$TWILIO_PHONE_NUMBER"
+    log "Twilio SMS credentials configured"
+fi
 
 # Studio
 upsert_env STUDIO_DEFAULT_ORGANIZATION "$STUDIO_DEFAULT_ORGANIZATION"
@@ -1516,8 +1577,9 @@ echo
 printf "${C_RED}╚══════════════════════════════════════════════════════════════════════════════════╝${C_RESET}\n\n"
 
 printf "${C_WHITE}Access Your Supabase Instance:${C_RESET}\n"
-print_config_line "Studio Dashboard" "$SITE_URL"
-print_config_line "API Endpoint" "$API_URL"
+print_config_line "API Endpoint (Public)" "$API_URL"
+print_config_line "Frontend URL (Your App)" "$SITE_URL"
+print_config_line "Studio Dashboard (Admin, Internal)" "http://${LOCAL_IP}:3000"
 print_config_line "VM IP Address" "$LOCAL_IP"
 echo
 
@@ -1529,16 +1591,25 @@ echo "  Restore Database:    sudo bash /srv/supabase/scripts/restore-database.sh
 echo
 
 printf "${C_WHITE}Next Steps:${C_RESET}\n"
-echo "  1) Configure reverse proxy (optional) for SSL termination:"
-echo "     • $API_URL → http://${LOCAL_IP}:${KONG_HTTP_PORT} (enable WebSockets)"
-echo "     • $SITE_URL → http://${LOCAL_IP}:3000"
-echo "  2) Or access directly:"
+echo "  ⚠️  IMPORTANT: Studio Dashboard (port 3000) is for ADMIN ACCESS only"
+echo "  It should NOT be exposed to the public internet."
+echo ""
+echo "  Your frontend app ($SITE_URL) should point to your actual application,"
+echo "  NOT to Supabase Studio. Studio is only accessible via http://${LOCAL_IP}:3000"
+echo ""
+echo "  1) Configure reverse proxy for SSL termination:"
+echo "     • $API_URL → http://${LOCAL_IP}:${KONG_HTTP_PORT} (Supabase API, enable WebSockets)"
+echo "     • $SITE_URL → your JW Writer frontend (NOT port 3000)"
+echo "     • (Optional) Create admin.${APEX_FQDN} → http://${LOCAL_IP}:3000 for Studio access"
+echo ""
+echo "  2) Direct access (for testing on LAN only):"
 echo "     • Studio Dashboard: http://${LOCAL_IP}:3000"
 echo "     • API Gateway: http://${LOCAL_IP}:${KONG_HTTP_PORT}"
 echo "     • Database Pooler: postgresql://postgres.${POOLER_TENANT_ID}:${POSTGRES_PASSWORD}@${LOCAL_IP}:6543/postgres"
+echo ""
 echo "  3) Run diagnostics: sudo bash /srv/supabase/scripts/diagnostic.sh"
-echo "  4) Test your API endpoint and visit Studio dashboard"
+echo "  4) Test your API: curl http://${LOCAL_IP}:${KONG_HTTP_PORT}/health"
 echo
 
 printf "${C_CYAN}Installation log: ${C_WHITE}$LOGFILE${C_RESET}\n"
-printf "${C_GREEN}✓ Supabase stack is up. Studio: $SITE_URL  API: $API_URL${C_RESET}\n\n"
+printf "${C_GREEN}✓ Supabase API is up. Access via: $API_URL${C_RESET}\n\n"

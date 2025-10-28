@@ -872,6 +872,144 @@ Action [K/G/E]: g
 - `ENABLE_ANONYMOUS_USERS` - Allow anonymous sign-in
 - `DISABLE_SIGNUP` - Disable user registration entirely
 
+### 📱 Phone Authentication Setup Guide
+
+**What is Phone Authentication?**
+
+Phone authentication allows users to sign in and sign up using their phone number instead of email. It works by:
+
+1. User enters their phone number
+2. Supabase generates a one-time password (OTP)
+3. OTP is sent via SMS to the user's phone
+4. User enters the OTP to verify their identity
+5. User is authenticated
+
+**Important Requirements:**
+
+Phone authentication requires an **external SMS provider** to actually send the SMS messages. The Supabase instance itself doesn't send SMS - it integrates with a third-party service.
+
+**Supported SMS Providers:**
+
+- **Twilio** (most popular, reliable) - https://www.twilio.com
+- **Vonage/Nexmo** - https://www.vonage.com
+- **MessageBird** - https://www.messagebird.com
+- **Textlocal** - https://www.textlocal.in
+
+**Cost Considerations:**
+
+- Phone authentication is FREE to enable in Supabase
+- You only pay for SMS messages via your chosen SMS provider
+- Typical SMS cost: $0.01 - $0.10 USD per message
+- Test your implementation thoroughly before going live
+
+**Setting Up Phone Authentication:**
+
+#### Step 1: Enable During Installation
+
+When running `supabase-install.sh`, you'll be prompted:
+```
+Enable Phone Authentication? [Y/n]: y
+Auto-confirm phone signups? (dev only) [y/N]: n
+```
+
+- Choose `y` to enable phone authentication
+- Choose `n` for auto-confirm (unless testing - dev only!)
+
+#### Step 2: Configure SMS Provider
+
+After installation, configure your SMS provider:
+
+```bash
+sudo bash /srv/supabase/scripts/update-supabase.sh
+```
+
+Navigate to **AUTH FEATURES** and note the setting. Then:
+
+1. Log in to your Supabase Studio Dashboard:
+   - URL: `http://YOUR-VM-IP:3000` (or your domain)
+   - Go to **Settings → Authentication**
+   - Look for **SMS Provider** section
+
+2. Choose your SMS provider and enter:
+   - API Key/Account SID
+   - Auth Token/Password
+   - Sender ID (the number users will see SMS coming from)
+
+3. Test the configuration with a test phone number
+
+#### Step 3: Enable in Your Application
+
+In your client code, enable phone OTP authentication:
+
+```javascript
+// Using Supabase JavaScript client
+import { createClient } from '@supabase/supabase-js';
+
+const supabase = createClient(API_URL, ANON_KEY);
+
+// Sign up with phone
+const { data, error } = await supabase.auth.signUpWithPassword({
+  phone: '+1234567890',
+  password: 'SecurePassword123!'
+});
+
+// Or sign in with OTP
+const { data, error } = await supabase.auth.signInWithOtp({
+  phone: '+1234567890'
+});
+
+// Verify OTP
+const { data, error } = await supabase.auth.verifyOtp({
+  phone: '+1234567890',
+  token: '123456', // OTP from SMS
+  type: 'sms'
+});
+```
+
+**Configuration Variables:**
+
+```bash
+# In .env file
+ENABLE_PHONE_SIGNUP=true                  # Allow phone sign-ups
+ENABLE_PHONE_AUTOCONFIRM=false            # ⚠️ ONLY set to 'true' for testing!
+```
+
+**Development vs. Production:**
+
+| Setting | Development | Production |
+|---------|-------------|-----------|
+| `ENABLE_PHONE_AUTOCONFIRM` | Can be `true` (skip SMS) | Should be `false` (require SMS) |
+| SMS Provider | Test account | Production account |
+| Phone Numbers | Use test numbers | Real user numbers |
+
+**Troubleshooting Phone Auth:**
+
+**"SMS not being sent":**
+- Verify SMS provider credentials are correct
+- Check API key hasn't expired
+- Verify sender ID is configured
+- Test SMS provider independently (most have test consoles)
+
+**"OTP verification failing":**
+- Ensure phone number includes country code (e.g., +1 for USA)
+- Check OTP hasn't expired (usually 5-10 minutes)
+- Verify user entered correct OTP
+
+**"Phone auth not enabled":**
+- Run `docker compose logs auth` to check for configuration errors
+- Verify `ENABLE_PHONE_SIGNUP=true` in `.env`
+- Restart auth service: `docker compose restart auth`
+
+**Disable Phone Auth:**
+
+```bash
+# Update configuration
+sudo bash /srv/supabase/scripts/update-supabase.sh
+
+# When prompted for "Update auth features?" choose:
+# ENABLE_PHONE_SIGNUP: false
+```
+
 ### Idempotent Configuration Updates
 
 The update script is **safe to run multiple times**:

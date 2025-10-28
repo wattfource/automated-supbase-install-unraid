@@ -196,6 +196,11 @@ ENABLE_PHONE_AUTOCONFIRM=$(get_env_value "ENABLE_PHONE_AUTOCONFIRM")
 ENABLE_ANONYMOUS_USERS=$(get_env_value "ENABLE_ANONYMOUS_USERS")
 DISABLE_SIGNUP=$(get_env_value "DISABLE_SIGNUP")
 
+# Twilio SMS Provider
+TWILIO_ACCOUNT_SID=$(get_env_value "TWILIO_ACCOUNT_SID")
+TWILIO_AUTH_TOKEN=$(get_env_value "TWILIO_AUTH_TOKEN")
+TWILIO_PHONE_NUMBER=$(get_env_value "TWILIO_PHONE_NUMBER")
+
 # Studio
 DASHBOARD_USERNAME=$(get_env_value "DASHBOARD_USERNAME")
 STUDIO_DEFAULT_ORGANIZATION=$(get_env_value "STUDIO_DEFAULT_ORGANIZATION")
@@ -289,13 +294,42 @@ printf "  ${C_CYAN}ENABLE_PHONE_AUTOCONFIRM${C_RESET}: %s\n" "${ENABLE_PHONE_AUT
 printf "  ${C_CYAN}ENABLE_ANONYMOUS_USERS${C_RESET}: %s\n" "${ENABLE_ANONYMOUS_USERS:-false}"
 printf "  ${C_CYAN}DISABLE_SIGNUP${C_RESET}: %s\n" "${DISABLE_SIGNUP:-false}"
 
+if [[ -n "$TWILIO_ACCOUNT_SID" ]]; then
+    printf "  ${C_CYAN}TWILIO_ACCOUNT_SID${C_RESET}: %s\n" "${TWILIO_ACCOUNT_SID:0:10}..."
+    printf "  ${C_CYAN}TWILIO_PHONE_NUMBER${C_RESET}: %s\n" "$TWILIO_PHONE_NUMBER"
+fi
+
 echo
+print_info "📱 PHONE AUTHENTICATION SETUP GUIDE:"
+echo "   Phone authentication uses SMS-based one-time passwords (OTP)"
+echo "   ENABLE_PHONE_SIGNUP: true/false - Allow users to sign up with phone numbers"
+echo "   ENABLE_PHONE_AUTOCONFIRM: true/false - Auto-confirm phone numbers (dev/testing only!)"
+echo ""
+echo "   ⚠️  IMPORTANT: To use phone authentication, you must configure an SMS provider:"
+echo "   Supported providers:"
+echo "     • Twilio (most popular)"
+echo "     • Vonage/Nexmo"
+echo "     • MessageBird"
+echo "     • Textlocal"
+echo ""
+echo "   SMS provider configuration is done in Supabase auth settings."
+echo "   After enabling phone signup, visit your Supabase Studio dashboard"
+echo "   and configure your SMS provider credentials under Auth settings."
+echo ""
 
 if [[ $(ask_yn "Update auth features?" "n") = "y" ]]; then
     ENABLE_PHONE_SIGNUP=$(ask "ENABLE_PHONE_SIGNUP (true/false)" "${ENABLE_PHONE_SIGNUP:-false}")
     ENABLE_PHONE_AUTOCONFIRM=$(ask "ENABLE_PHONE_AUTOCONFIRM (true/false)" "${ENABLE_PHONE_AUTOCONFIRM:-false}")
     ENABLE_ANONYMOUS_USERS=$(ask "ENABLE_ANONYMOUS_USERS (true/false)" "${ENABLE_ANONYMOUS_USERS:-false}")
     DISABLE_SIGNUP=$(ask "DISABLE_SIGNUP (true/false)" "${DISABLE_SIGNUP:-false}")
+    
+    if [[ "$ENABLE_PHONE_SIGNUP" = "true" ]]; then
+        if [[ $(ask_yn "Configure Twilio credentials?" "n") = "y" ]]; then
+            TWILIO_ACCOUNT_SID=$(ask "Twilio Account SID" "${TWILIO_ACCOUNT_SID}")
+            TWILIO_AUTH_TOKEN=$(ask "Twilio Auth Token" "${TWILIO_AUTH_TOKEN}")
+            TWILIO_PHONE_NUMBER=$(ask "Twilio Phone Number (e.g., +1234567890)" "${TWILIO_PHONE_NUMBER}")
+        fi
+    fi
 fi
 
 print_section "STUDIO DASHBOARD"
@@ -380,6 +414,41 @@ if [ "$(get_env_value DASHBOARD_USERNAME)" != "$DASHBOARD_USERNAME" ]; then
     CHANGES=$((CHANGES+1))
 fi
 
+if [ "$(get_env_value ENABLE_PHONE_SIGNUP)" != "$ENABLE_PHONE_SIGNUP" ]; then
+    echo "${C_YELLOW}ENABLE_PHONE_SIGNUP${C_RESET}"
+    echo "  Before: $(get_env_value ENABLE_PHONE_SIGNUP)"
+    echo "  After:  $ENABLE_PHONE_SIGNUP"
+    CHANGES=$((CHANGES+1))
+fi
+
+if [ "$(get_env_value ENABLE_PHONE_AUTOCONFIRM)" != "$ENABLE_PHONE_AUTOCONFIRM" ]; then
+    echo "${C_YELLOW}ENABLE_PHONE_AUTOCONFIRM${C_RESET}"
+    echo "  Before: $(get_env_value ENABLE_PHONE_AUTOCONFIRM)"
+    echo "  After:  $ENABLE_PHONE_AUTOCONFIRM"
+    CHANGES=$((CHANGES+1))
+fi
+
+if [ "$(get_env_value TWILIO_ACCOUNT_SID)" != "$TWILIO_ACCOUNT_SID" ]; then
+    echo "${C_YELLOW}TWILIO_ACCOUNT_SID${C_RESET}"
+    echo "  Before: $(get_env_value TWILIO_ACCOUNT_SID | sed 's/./*/g')"
+    echo "  After:  ${TWILIO_ACCOUNT_SID:0:10}..."
+    CHANGES=$((CHANGES+1))
+fi
+
+if [ "$(get_env_value TWILIO_AUTH_TOKEN)" != "$TWILIO_AUTH_TOKEN" ]; then
+    echo "${C_YELLOW}TWILIO_AUTH_TOKEN${C_RESET}"
+    echo "  Before: $(get_env_value TWILIO_AUTH_TOKEN | sed 's/./*/g')"
+    echo "  After:  [REDACTED]"
+    CHANGES=$((CHANGES+1))
+fi
+
+if [ "$(get_env_value TWILIO_PHONE_NUMBER)" != "$TWILIO_PHONE_NUMBER" ]; then
+    echo "${C_YELLOW}TWILIO_PHONE_NUMBER${C_RESET}"
+    echo "  Before: $(get_env_value TWILIO_PHONE_NUMBER)"
+    echo "  After:  $TWILIO_PHONE_NUMBER"
+    CHANGES=$((CHANGES+1))
+fi
+
 if [ $CHANGES -eq 0 ]; then
     echo "${C_GREEN}No changes detected${C_RESET}"
     echo
@@ -426,6 +495,9 @@ update_env_value "ENABLE_PHONE_SIGNUP" "$ENABLE_PHONE_SIGNUP"
 update_env_value "ENABLE_PHONE_AUTOCONFIRM" "$ENABLE_PHONE_AUTOCONFIRM"
 update_env_value "ENABLE_ANONYMOUS_USERS" "$ENABLE_ANONYMOUS_USERS"
 update_env_value "DISABLE_SIGNUP" "$DISABLE_SIGNUP"
+update_env_value "TWILIO_ACCOUNT_SID" "$TWILIO_ACCOUNT_SID"
+update_env_value "TWILIO_AUTH_TOKEN" "$TWILIO_AUTH_TOKEN"
+update_env_value "TWILIO_PHONE_NUMBER" "$TWILIO_PHONE_NUMBER"
 update_env_value "DASHBOARD_USERNAME" "$DASHBOARD_USERNAME"
 update_env_value "STUDIO_DEFAULT_ORGANIZATION" "$STUDIO_DEFAULT_ORGANIZATION"
 update_env_value "STUDIO_DEFAULT_PROJECT" "$STUDIO_DEFAULT_PROJECT"
