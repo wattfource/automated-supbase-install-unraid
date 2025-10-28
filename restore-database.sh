@@ -223,19 +223,22 @@ restore_sql_format() {
     
     if [ "$RESTORE_MODE" = "schema-only" ]; then
         print_info "Filtering: Schema only (skipping data)"
-        # Filter out COPY/INSERT data, fix COPY markers, and suppress permission errors
+        # Remove entire COPY blocks and problematic settings
+        # Removes: COPY...EOF blocks, invalid psql commands, problematic settings
         if cat "$backup_file" | \
+           sed '/^COPY /,/^\\\.$/d' | \
            sed 's/\\restrict//g; s/\\unrestrict//g' | \
-           grep -v "^COPY " | grep -v "^INSERT INTO" | \
+           sed '/transaction_timeout/d; /app\.settings\.jwt_exp/d; /log_min_messages/d' | \
            docker compose exec -T db psql -U postgres -d postgres -v ON_ERROR_STOP=off 2>&1 | tee -a "$LOGFILE"; then
             print_success "Schema restored successfully (no data)"
             log "Schema-only restore completed"
             return 0
         fi
     else
-        # Full restore with data
+        # Full restore with data - still remove problematic settings
         if cat "$backup_file" | \
            sed 's/\\restrict//g; s/\\unrestrict//g' | \
+           sed '/transaction_timeout/d; /app\.settings\.jwt_exp/d; /log_min_messages/d' | \
            docker compose exec -T db psql -U postgres -d postgres -v ON_ERROR_STOP=off 2>&1 | tee -a "$LOGFILE"; then
             print_success "Database restored successfully (schema + data)"
             log "Full restore completed successfully"
@@ -259,19 +262,22 @@ restore_sql_gz_format() {
     
     if [ "$RESTORE_MODE" = "schema-only" ]; then
         print_info "Filtering: Schema only (skipping data)"
-        # Filter out COPY/INSERT data, fix COPY markers, suppress permission errors
+        # Remove entire COPY blocks and problematic settings
+        # Removes: COPY...EOF blocks, invalid psql commands, problematic settings
         if zcat "$backup_file" | \
+           sed '/^COPY /,/^\\\.$/d' | \
            sed 's/\\restrict//g; s/\\unrestrict//g' | \
-           grep -v "^COPY " | grep -v "^INSERT INTO" | \
+           sed '/transaction_timeout/d; /app\.settings\.jwt_exp/d; /log_min_messages/d' | \
            docker compose exec -T db psql -U postgres -d postgres -v ON_ERROR_STOP=off 2>&1 | tee -a "$LOGFILE"; then
             print_success "Schema restored successfully (no data)"
             log "Schema-only restore completed"
             return 0
         fi
     else
-        # Full restore with data
+        # Full restore with data - still remove problematic settings
         if zcat "$backup_file" | \
            sed 's/\\restrict//g; s/\\unrestrict//g' | \
+           sed '/transaction_timeout/d; /app\.settings\.jwt_exp/d; /log_min_messages/d' | \
            docker compose exec -T db psql -U postgres -d postgres -v ON_ERROR_STOP=off 2>&1 | tee -a "$LOGFILE"; then
             print_success "Database restored successfully (schema + data)"
             log "Full restore completed successfully"
