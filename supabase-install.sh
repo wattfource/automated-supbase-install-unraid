@@ -196,7 +196,11 @@ upsert_env() {
     local k="$1" v="$2"
     # Secrets use either Base64URL (A-Za-z0-9-_) or Standard Base64 (A-Za-z0-9+/)
     # Both are safe to write directly to .env without quoting (no special shell characters)
-    echo "${k}=${v}" >> .env
+    if grep -q "^${k}=" .env 2>/dev/null; then
+        sed -i "s|^${k}=.*|${k}=${v}|" .env
+    else
+        echo "${k}=${v}" >> .env
+    fi
     log "Set env: $k"
 }
 
@@ -351,6 +355,11 @@ print_config_line "API URL (API_EXTERNAL_URL)" "$API_URL"
 if [[ -n "$ADDITIONAL_REDIRECT" ]]; then
     print_config_line "Additional Redirect URLs" "$ADDITIONAL_REDIRECT"
 fi
+echo
+print_info "ℹ️  URL Reference:"
+echo "  • SITE_URL: Primary URL where your frontend is served (used for email redirects)"
+echo "  • API_EXTERNAL_URL: Public API gateway URL (clients connect here)"
+echo "  • SUPABASE_PUBLIC_URL: Studio internal URL (set equal to API_EXTERNAL_URL)"
 echo
 
 log "URLs: apex=$APEX_FQDN site=$SITE_URL api=$API_URL additional=$ADDITIONAL_REDIRECT"
@@ -627,6 +636,7 @@ print_info "Writing environment variables..."
 
 # URLs
 upsert_env SUPABASE_PUBLIC_URL "$API_URL"
+upsert_env API_EXTERNAL_URL "$API_URL"
 upsert_env SITE_URL "$SITE_URL"
 upsert_env ADDITIONAL_REDIRECT_URLS "$ADDITIONAL_REDIRECT"
 
@@ -1478,6 +1488,12 @@ printf "${C_RED}╔════════════════════�
 printf "${C_RED}║                       🔴 RECORD THESE CREDENTIALS NOW 🔴                        ║${C_RESET}\n"
 printf "${C_RED}║              These will be stored in /srv/supabase/.env only!                   ║${C_RESET}\n"
 printf "${C_RED}╠══════════════════════════════════════════════════════════════════════════════════╣${C_RESET}\n"
+echo
+printf "${C_WHITE}⚠️  IMPORTANT SECURITY NOTES:${C_RESET}\n"
+printf "   • ${C_YELLOW}Never commit .env file to version control${C_RESET}\n"
+printf "   • ${C_YELLOW}JWT_SECRET cannot be changed without invalidating all existing API keys${C_RESET}\n"
+printf "   • ${C_YELLOW}Clients using ANON_KEY or SERVICE_ROLE_KEY must be updated if JWT_SECRET rotates${C_RESET}\n"
+printf "   • ${C_YELLOW}All credentials are securely stored at: /srv/supabase/.env (chmod 600)${C_RESET}\n"
 echo
 printf "${C_WHITE}Dashboard Access:${C_RESET}\n"
 printf "  URL:      ${C_CYAN}%s${C_RESET}\n" "$API_URL"

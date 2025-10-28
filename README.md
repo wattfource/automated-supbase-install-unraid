@@ -758,3 +758,127 @@ sudo bash /srv/supabase/scripts/update-supabase.sh
 Select option `1` and enter your app URL (e.g., `https://www.jwscribe.com`)
 
 **Why?** Supabase needs to know where to redirect users after email confirmation. By default it's set to the local IP, not your production domain.
+
+---
+
+## ⚙️ Configuration Management & Best Practices
+
+### Understanding Configuration Files
+
+Your Supabase installation uses a **clean separation of concerns**:
+
+1. **Vendor files** (never modify):
+   - `docker-compose.yml` - Official Supabase service definitions
+   - `.env.example` - Official reference configuration
+
+2. **Host-specific configuration** (safe to customize):
+   - `.env` - Your secrets and settings (chmod 600, never commit to git)
+   - `docker-compose.override.yml` - Port bindings and volume mounts for your host
+
+This approach ensures upgrades don't overwrite your configuration.
+
+### URL Configuration
+
+Supabase uses three different URLs with specific purposes:
+
+| Variable | Purpose | Example |
+|----------|---------|---------|
+| `SITE_URL` | Frontend URL for email redirects and OAuth callbacks | `https://app.yourdomain.com` |
+| `API_EXTERNAL_URL` | Public API gateway URL (what clients connect to) | `https://api.yourdomain.com` |
+| `SUPABASE_PUBLIC_URL` | Studio internal reference URL (same as API_EXTERNAL_URL) | `https://api.yourdomain.com` |
+
+**Important:** Use **public URLs only** (not LAN IPs like `192.168.1.100`). LAN IPs in emails will break magic links for external users.
+
+### JWT Secret Management
+
+The `JWT_SECRET` is the master key for your authentication system. If you change it, **all existing API keys become invalid**.
+
+#### When to Rotate JWT_SECRET
+
+- **Security incident** (key might be compromised)
+- **Production launch** (if using development defaults)
+- **Policy requirement** (regular key rotation)
+
+#### How to Rotate Safely
+
+Use the update script with JWT management:
+
+```bash
+sudo bash /srv/supabase/scripts/update-supabase.sh
+```
+
+When prompted to "Manage JWT secrets?", select:
+- `[G]enerate` - Creates a new secure secret
+- The script automatically regenerates `ANON_KEY` and `SERVICE_ROLE_KEY`
+
+**After rotation, all clients must update their API keys:**
+
+```javascript
+// Old (now invalid)
+const client = createClient('https://api.example.com', 'old-anon-key');
+
+// New (required after JWT_SECRET rotation)
+const client = createClient('https://api.example.com', 'new-anon-key');
+```
+
+### Managing Configuration with update-supabase.sh
+
+The update utility offers multiple ways to manage settings:
+
+```bash
+sudo bash /srv/supabase/scripts/update-supabase.sh
+```
+
+For each section, you can:
+- **Keep** - Leave unchanged
+- **Generate** - Auto-create new values (for secrets only)
+- **Enter** - Provide custom values
+
+**Example workflow:**
+
+```
+Manage JWT secrets? [y/N]: y
+
+Current value: abc123def456ghi789jkl...
+Choose action:
+  [K] Keep current value
+  [G] Generate new value
+  [E] Enter custom value
+
+Action [K/G/E]: g
+✓ JWT_SECRET rotated and API keys regenerated
+```
+
+### Environment Variables Explained
+
+#### URLs & Domains
+- `SITE_URL` - Primary frontend URL (use for auth redirects)
+- `API_EXTERNAL_URL` - Public API endpoint
+- `SUPABASE_PUBLIC_URL` - Studio's reference to the API (usually same as API_EXTERNAL_URL)
+
+#### Secrets (Never share or commit these!)
+- `JWT_SECRET` - Master authentication secret (base64url encoded, 48+ bytes)
+- `ANON_KEY` - Public API key (JWT based on JWT_SECRET, safe for frontend)
+- `SERVICE_ROLE_KEY` - Private API key (JWT based on JWT_SECRET, keep secret!)
+- `POSTGRES_PASSWORD` - Database superuser password
+- `DASHBOARD_PASSWORD` - Studio dashboard password
+- `SECRET_KEY_BASE` - Session encryption key
+- `VAULT_ENC_KEY` - Data encryption key
+- `PG_META_CRYPTO_KEY` - Metadata encryption key
+
+#### Features & Auth
+- `ENABLE_EMAIL_SIGNUP` - Allow email authentication
+- `ENABLE_PHONE_SIGNUP` - Allow phone authentication  
+- `ENABLE_ANONYMOUS_USERS` - Allow anonymous sign-in
+- `DISABLE_SIGNUP` - Disable user registration entirely
+
+### Idempotent Configuration Updates
+
+The update script is **safe to run multiple times**:
+
+- Only changes values you explicitly modify
+- Creates timestamped backups before applying changes
+- Never overwrites vendor files
+- Automatically restarts containers to apply changes
+
+---

@@ -79,6 +79,44 @@ require_root() {
     }
 }
 
+# Secret Generation Functions
+gen_b64_url() { openssl rand "$1" 2>/dev/null | base64 | tr '+/' '-_' | tr -d '=' | tr -d '\n'; }
+
+b64url() { openssl enc -base64 -A | tr '+/' '-_' | tr -d '='; }
+
+gen_jwt_for_role() {
+  local role="$1" header payload hb pb sig iat exp JWT_SECRET="$2"
+  iat=$(date +%s); exp=$((iat + 3600*24*365*5))
+  header='{"typ":"JWT","alg":"HS256"}'
+  payload="$(jq -nc --arg r "$role" --argjson i "$iat" --argjson e "$exp" \
+        '{"role":$r,"iss":"supabase","iat":$i,"exp":$e}' 2>/dev/null)"
+  hb="$(printf '%s' "$header" | b64url)"
+  pb="$(printf '%s' "$payload" | b64url)"
+  sig="$(printf '%s.%s' "$hb" "$pb" | openssl dgst -binary -sha256 -hmac "$JWT_SECRET" | b64url 2>/dev/null)"
+  printf '%s.%s.%s\n' "$hb" "$pb" "$sig"
+}
+
+ask_secret_action() {
+    local prompt="$1" current_val="$2" action
+    echo
+    printf "${C_CYAN}Current value:${C_RESET} %s\n" "${current_val:-(not set)}"
+    printf "${C_WHITE}Choose action:${C_RESET}\n"
+    echo "  [K] Keep current value"
+    echo "  [G] Generate new value"
+    echo "  [E] Enter custom value"
+    echo
+    while true; do
+        read -p "Action [K/G/E]: " -r action </dev/tty || true
+        action="${action:-K}"
+        case "$action" in
+            K|k) echo "keep"; return;;
+            G|g) echo "generate"; return;;
+            E|e) echo "enter"; return;;
+            *) print_warning "Please enter K, G, or E";;
+        esac
+    done
+}
+
 check_supabase_directory() {
     if [ ! -d "/srv/supabase" ]; then
         print_error "Supabase installation not found at /srv/supabase"
@@ -134,6 +172,9 @@ API_EXTERNAL_URL=$(get_env_value "API_EXTERNAL_URL")
 ADDITIONAL_REDIRECT_URLS=$(get_env_value "ADDITIONAL_REDIRECT_URLS")
 JWT_SECRET=$(get_env_value "JWT_SECRET")
 JWT_EXPIRY=$(get_env_value "JWT_EXPIRY")
+ANON_KEY=$(get_env_value "ANON_KEY")
+SERVICE_ROLE_KEY=$(get_env_value "SERVICE_ROLE_KEY")
+SUPABASE_PUBLIC_URL=$(get_env_value "SUPABASE_PUBLIC_URL")
 
 # Database
 POSTGRES_HOST=$(get_env_value "POSTGRES_HOST")
@@ -177,8 +218,40 @@ printf "  ${C_CYAN}ADDITIONAL_REDIRECT_URLS${C_RESET}: %s\n" "${ADDITIONAL_REDIR
 printf "  ${C_CYAN}JWT_EXPIRY${C_RESET}: %s seconds\n" "${JWT_EXPIRY:-3600}"
 
 echo
+print_warning "⚠️  JWT Secret Rotation Notice:"
+echo "  If you change the JWT_SECRET below, it will invalidate all existing API keys."
+echo "  Any clients using ANON_KEY or SERVICE_ROLE_KEY will need to be updated."
+echo
 
-if [[ $(ask_yn "Update authentication settings?" "n") = "y" ]]; then
+# Optional JWT secret rotation
+if [[ $(ask_yn "Manage JWT secrets?" "n") = "y" ]]; then
+    JWT_ACTION=$(ask_secret_action "JWT_SECRET" "${JWT_SECRET:0:20}...")
+    case "$JWT_ACTION" in
+        generate)
+            JWT_SECRET=$(gen_b64_url 48)
+            export JWT_SECRET
+            ANON_KEY=$(gen_jwt_for_role "anon" "$JWT_SECRET")
+            SERVICE_ROLE_KEY=$(gen_jwt_for_role "service_role" "$JWT_SECRET")
+            print_success "✓ JWT_SECRET rotated and API keys regenerated"
+            print_warning "⚠️  Update all client applications with new ANON_KEY:"
+            printf "     ${C_YELLOW}%s${C_RESET}\n" "${ANON_KEY:0:30}..."
+            ;;
+        enter)
+            JWT_SECRET=$(ask "Enter new JWT_SECRET" "$JWT_SECRET")
+            export JWT_SECRET
+            ANON_KEY=$(gen_jwt_for_role "anon" "$JWT_SECRET")
+            SERVICE_ROLE_KEY=$(gen_jwt_for_role "service_role" "$JWT_SECRET")
+            print_success "✓ JWT_SECRET updated and API keys regenerated"
+            ;;
+        keep)
+            print_info "Keeping current JWT_SECRET"
+            ;;
+    esac
+fi
+
+echo
+
+if [[ $(ask_yn "Update other authentication settings?" "n") = "y" ]]; then
     SITE_URL=$(ask "SITE_URL (primary app URL for auth redirects)" "$SITE_URL")
     API_EXTERNAL_URL=$(ask "API_EXTERNAL_URL (Supabase API endpoint)" "$API_EXTERNAL_URL")
     ADDITIONAL_REDIRECT_URLS=$(ask "ADDITIONAL_REDIRECT_URLS (comma-separated)" "${ADDITIONAL_REDIRECT_URLS}")
@@ -336,8 +409,12 @@ print_info "Updating configuration file..."
 
 update_env_value "SITE_URL" "$SITE_URL"
 update_env_value "API_EXTERNAL_URL" "$API_EXTERNAL_URL"
+update_env_value "SUPABASE_PUBLIC_URL" "${SUPABASE_PUBLIC_URL:-$API_EXTERNAL_URL}"
 update_env_value "ADDITIONAL_REDIRECT_URLS" "$ADDITIONAL_REDIRECT_URLS"
+update_env_value "JWT_SECRET" "$JWT_SECRET"
 update_env_value "JWT_EXPIRY" "$JWT_EXPIRY"
+update_env_value "ANON_KEY" "$ANON_KEY"
+update_env_value "SERVICE_ROLE_KEY" "$SERVICE_ROLE_KEY"
 update_env_value "SMTP_HOST" "$SMTP_HOST"
 update_env_value "SMTP_PORT" "$SMTP_PORT"
 update_env_value "SMTP_USER" "$SMTP_USER"
