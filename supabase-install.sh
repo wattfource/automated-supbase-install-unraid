@@ -428,19 +428,6 @@ else
     TWILIO_PHONE_NUMBER=""
 fi
 
-print_section "AUTHENTICATION & SECURITY"
-
-print_info "Current Settings:"
-printf "  ${C_CYAN}SITE_URL${C_RESET}: %s\n" "${SITE_URL:-(not set)}"
-printf "  ${C_CYAN}API_EXTERNAL_URL${C_RESET}: %s\n" "${API_EXTERNAL_URL:-(not set)}"
-printf "  ${C_CYAN}ADDITIONAL_REDIRECT_URLS${C_RESET}: %s\n" "${ADDITIONAL_REDIRECT_URLS:-(not set)}"
-printf "  ${C_CYAN}JWT_EXPIRY${C_RESET}: %s seconds\n" "${JWT_EXPIRY:-3600}"
-
-echo
-print_warning "⚠️  JWT Secret Rotation Notice:"
-echo "  If you change the JWT_SECRET below, it will invalidate all existing API keys."
-echo "  Any clients using ANON_KEY or SERVICE_ROLE_KEY will need to be updated."
-echo
 
 # STEP 7: Studio Configuration
 print_step_header "7" "STUDIO CONFIG"
