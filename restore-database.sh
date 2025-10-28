@@ -223,16 +223,20 @@ restore_sql_format() {
     
     if [ "$RESTORE_MODE" = "schema-only" ]; then
         print_info "Filtering: Schema only (skipping data)"
-        # Filter out INSERT, COPY data statements but keep schema
-        if grep -v "^COPY " "$backup_file" | grep -v "^INSERT INTO" | \
-           docker compose exec -T db psql -U postgres -d postgres 2>&1 | tee -a "$LOGFILE"; then
+        # Filter out COPY/INSERT data, fix COPY markers, and suppress permission errors
+        if cat "$backup_file" | \
+           sed 's/\\restrict//g; s/\\unrestrict//g' | \
+           grep -v "^COPY " | grep -v "^INSERT INTO" | \
+           docker compose exec -T db psql -U postgres -d postgres -v ON_ERROR_STOP=off 2>&1 | tee -a "$LOGFILE"; then
             print_success "Schema restored successfully (no data)"
             log "Schema-only restore completed"
             return 0
         fi
     else
         # Full restore with data
-        if cat "$backup_file" | docker compose exec -T db psql -U postgres -d postgres 2>&1 | tee -a "$LOGFILE"; then
+        if cat "$backup_file" | \
+           sed 's/\\restrict//g; s/\\unrestrict//g' | \
+           docker compose exec -T db psql -U postgres -d postgres -v ON_ERROR_STOP=off 2>&1 | tee -a "$LOGFILE"; then
             print_success "Database restored successfully (schema + data)"
             log "Full restore completed successfully"
             return 0
@@ -255,16 +259,20 @@ restore_sql_gz_format() {
     
     if [ "$RESTORE_MODE" = "schema-only" ]; then
         print_info "Filtering: Schema only (skipping data)"
-        # Filter out INSERT, COPY data statements but keep schema
-        if zcat "$backup_file" | grep -v "^COPY " | grep -v "^INSERT INTO" | \
-           docker compose exec -T db psql -U postgres -d postgres 2>&1 | tee -a "$LOGFILE"; then
+        # Filter out COPY/INSERT data, fix COPY markers, suppress permission errors
+        if zcat "$backup_file" | \
+           sed 's/\\restrict//g; s/\\unrestrict//g' | \
+           grep -v "^COPY " | grep -v "^INSERT INTO" | \
+           docker compose exec -T db psql -U postgres -d postgres -v ON_ERROR_STOP=off 2>&1 | tee -a "$LOGFILE"; then
             print_success "Schema restored successfully (no data)"
             log "Schema-only restore completed"
             return 0
         fi
     else
         # Full restore with data
-        if zcat "$backup_file" | docker compose exec -T db psql -U postgres -d postgres 2>&1 | tee -a "$LOGFILE"; then
+        if zcat "$backup_file" | \
+           sed 's/\\restrict//g; s/\\unrestrict//g' | \
+           docker compose exec -T db psql -U postgres -d postgres -v ON_ERROR_STOP=off 2>&1 | tee -a "$LOGFILE"; then
             print_success "Database restored successfully (schema + data)"
             log "Full restore completed successfully"
             return 0

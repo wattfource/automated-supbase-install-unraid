@@ -357,7 +357,7 @@ if [ "$USE_SAVED" = false ]; then
         # Show connection string for confirmation
         printf "${C_YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${C_RESET}\n"
         printf "${C_WHITE}Please verify your connection string:${C_RESET}\n\n"
-        printf "${C_CYAN}postgresql://%s:%s@%s:%s/%s${C_RESET}\n\n" "$DB_USER" "[YOUR_PASSWORD]" "$DB_HOST" "$DB_PORT" "$DB_NAME"
+        printf "${C_CYAN}postgresql://%s:%s@%s:%s/%s${C_RESET}\n\n" "$DB_USER" "$DB_PASS" "$DB_HOST" "$DB_PORT" "$DB_NAME"
         printf "${C_YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${C_RESET}\n"
         echo
         
