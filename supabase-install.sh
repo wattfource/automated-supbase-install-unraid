@@ -259,7 +259,17 @@ ENABLE_EDGE=$(ask_yn "Enable Edge Functions?" "y")
 # The 2GB RAM cost is worth it for full functionality and monitoring capabilities
 ENABLE_ANALYTICS="y"
 
-log "Feature selection: Email=$ENABLE_EMAIL Phone=$ENABLE_PHONE Anonymous=$ENABLE_ANONYMOUS Storage=$ENABLE_STORAGE Realtime=$ENABLE_REALTIME Edge=$ENABLE_EDGE Analytics=$ENABLE_ANALYTICS"
+# Studio dashboard access configuration
+echo
+print_info "Studio Dashboard Configuration"
+print_warning "⚠️  Security Note:"
+echo "  Studio is your admin dashboard with full database access"
+echo "  Default: Accessible only via reverse proxy (recommended secure method)"
+echo "  LAN Option: Open port 3000 on local network (less secure but convenient)"
+echo
+EXPOSE_STUDIO_LAN=$(ask_yn "Open Studio on port 3000 for LAN-only access?" "n")
+
+log "Feature selection: Email=$ENABLE_EMAIL Phone=$ENABLE_PHONE Anonymous=$ENABLE_ANONYMOUS Storage=$ENABLE_STORAGE Realtime=$ENABLE_REALTIME Edge=$ENABLE_EDGE Analytics=$ENABLE_ANALYTICS StudioLAN=$EXPOSE_STUDIO_LAN"
 
 # STEP 2: Generating Secrets
 print_step_header "2" "GENERATING SECRETS"
@@ -542,6 +552,18 @@ if [[ "$ENABLE_PHONE" = "y" ]] && [[ -n "$TWILIO_ACCOUNT_SID" ]]; then
     echo
 fi
 
+if [[ "$EXPOSE_STUDIO_LAN" = "y" ]]; then
+    printf "${C_WHITE}Studio Dashboard:${C_RESET}
+"
+    print_config_line "LAN Access" "127.0.0.1:3000"
+    echo
+else
+    printf "${C_WHITE}Studio Dashboard:${C_RESET}
+"
+    print_config_line "LAN Access" "Disabled (reverse proxy only)"
+    echo
+fi
+
 printf "${C_WHITE}Network Access:${C_RESET}\n"
 print_config_line "All Ports" "Network accessible (0.0.0.0)"
 print_config_line "Kong HTTP" "0.0.0.0:${KONG_HTTP_PORT}"
@@ -813,62 +835,36 @@ else
     log "Storage mounted at $VM_MOUNT"
 fi
 
-# Create docker-compose override
-print_info "Creating docker-compose override..."
-
-# Create docker-compose override for feature configuration and security
+# Create docker-compose.override.yml for Unraid-specific configuration
+print_info "Creating docker-compose.override.yml..."
 cat > docker-compose.override.yml <<YAML
+# UNRAID-specific configuration
+# Overrides for $APEX_FQDN deployment
+
 services:
 YAML
 
-# Expose Studio for LAN access (admin dashboard)
-cat >> docker-compose.override.yml <<YAML
+# Conditionally expose Studio on LAN
+if [[ "$EXPOSE_STUDIO_LAN" = "y" ]]; then
+    print_warning "⚠️  Studio will be accessible on port 3000 (LAN only)"
+    cat >> docker-compose.override.yml <<YAML
   studio:
     ports:
-      - "0.0.0.0:3000:3000"
-YAML
+      - "127.0.0.1:3000:3000"
 
-# Expose Supavisor pooler for direct database connections
-cat >> docker-compose.override.yml <<YAML
-  supavisor:
-    ports:
-      - "0.0.0.0:6543:6543"
 YAML
-
-# Kong port configuration (only override if using non-default ports)
-if [[ "$KONG_HTTP_PORT" != "8000" ]] || [[ "$KONG_HTTPS_PORT" != "8443" ]]; then
-    cat >> docker-compose.override.yml <<YAML
-  kong:
-    ports:
-      - "${KONG_HTTP_PORT}:8000"
-      - "${KONG_HTTPS_PORT}:8443"
-YAML
+else
+    print_info "Studio accessible only via reverse proxy (no port exposed)"
 fi
 
-# Disable external access to sensitive services (always do this for security)
-cat >> docker-compose.override.yml <<YAML
-  db:
-    ports: []
-  auth:
-    ports: []
-  rest:
-    ports: []
-  realtime:
-    ports: []
-YAML
-
-# Analytics is always enabled (required for Studio dashboard and monitoring)
-# Vector service will use default configuration
-
+# Add storage volume if enabled
 if [[ "$ENABLE_STORAGE" = "y" ]]; then
     cat >> docker-compose.override.yml <<YAML
   storage:
-    ports: []
     volumes:
       - ${VM_MOUNT}:/var/lib/storage
 YAML
 fi
-
 
 log "Docker compose override created"
 print_success "Override configured"
