@@ -471,34 +471,16 @@ if [[ "$ENABLE_STORAGE" = "y" ]]; then
     print_step_header "9" "STORAGE CONFIG"
     echo
     
-    print_info "Storage architecture: Unraid share → VM mount point → Docker container"
+    print_info "Storage architecture: PCI-based mount (configure via Unraid VM editor)"
+    print_info "Mount point will be configured manually via Unraid VM editor"
     echo
     
-    STORAGE_PROTO=$(ask "Storage protocol (nfs|smb)" "nfs")
+    # Prompt for custom storage path segment
+    STORAGE_CUSTOM=$(ask "Storage path segment (custom identifier)" "${STUDIO_DEFAULT_ORGANIZATION:-storage}")
     
-if [[ "$STORAGE_PROTO" = "nfs" ]]; then
-        UNRAID_HOST=$(ask "Unraid server hostname or IP (e.g. 192.168.1.70)" "")
-        UNRAID_EXPORT=$(ask "Unraid NFS export path" "/mnt/user/supabase-storage/${APEX_FQDN}")
-        STORAGE_MOUNT=$(ask "VM mount point" "/mnt/unraid/supabase-storage/${APEX_FQDN}")
-        exec_with_spinner "Installing NFS client..." apt install -y nfs-common || {
-            print_error "Failed to install NFS client"
-            exit 1
-        }
-    else
-        UNRAID_HOST=$(ask "Unraid server hostname or IP (e.g. 192.168.1.70)" "")
-        UNRAID_SHARE=$(ask "Unraid SMB share name" "supabase-storage")
-        # SMB mounts the entire share, then Docker uses a subfolder within it
-        SMB_MOUNT_BASE="/mnt/unraid"
-        STORAGE_MOUNT="${SMB_MOUNT_BASE}/${UNRAID_SHARE}/${APEX_FQDN}"
-        SMB_USER=$(ask "SMB username (REQUIRED)" "")
-        SMB_PASS=$(ask "SMB password (REQUIRED)" "")
-        exec_with_spinner "Installing SMB client..." apt install -y cifs-utils || {
-            print_error "Failed to install SMB client"
-            exit 1
-        }
-    fi
-    VM_MOUNT="$STORAGE_MOUNT"
-    log "Storage: proto=$STORAGE_PROTO host=$UNRAID_HOST mount=$VM_MOUNT"
+    # Default mount point path for placeholder (user will configure via Unraid VM editor)
+    VM_MOUNT="/mnt/user/supabase-storage/${STORAGE_CUSTOM}/${APEX_FQDN}"
+    log "Storage: mount placeholder=$VM_MOUNT (configure via Unraid VM editor)"
 else
     VM_MOUNT=""
 fi
@@ -539,9 +521,7 @@ echo
 
 if [[ "$ENABLE_STORAGE" = "y" ]]; then
     printf "${C_WHITE}Storage:${C_RESET}\n"
-    print_config_line "Protocol" "$STORAGE_PROTO"
-    print_config_line "Unraid Host" "$UNRAID_HOST"
-    print_config_line "Mount Point" "$VM_MOUNT"
+    print_config_line "Status" "Enabled (PCI-based mount - configure via Unraid VM editor)"
     echo
 fi
 
@@ -793,55 +773,88 @@ chmod 600 .env
 log "Environment file configured and secured"
 print_success "Environment configured"
 
-# Mount storage
+# Add fstab placeholder for PCI-based mount (if storage enabled)
 if [[ "$ENABLE_STORAGE" = "y" ]]; then
-    print_step_header "◉" "MOUNTING STORAGE"
+    print_step_header "◉" "STORAGE MOUNT CONFIGURATION"
     echo
     
-if [[ "$STORAGE_PROTO" = "nfs" ]]; then
-        exec_with_spinner "Creating mount point..." mkdir -p "$VM_MOUNT" || {
-            print_error "Failed to create mount point"
-            exit 1
-        }
-  grep -qE "[[:space:]]$VM_MOUNT[[:space:]]" /etc/fstab || \
-    echo "${UNRAID_HOST}:${UNRAID_EXPORT}  ${VM_MOUNT}  nfs  defaults  0  0" >> /etc/fstab
-        exec_with_spinner "Mounting NFS share..." mount -a || {
-            print_error "Failed to mount NFS share. Check that NFS export exists on Unraid."
-            exit 1
-        }
-else
-        # SMB: mount the share to base directory, then create subfolder
-        SMB_MOUNT_POINT="${SMB_MOUNT_BASE}/${UNRAID_SHARE}"
-        mkdir -p "$SMB_MOUNT_POINT"
-        
-  CREDF="/root/.smb-${APEX_FQDN}.cred"
-        {
-            echo "username=${SMB_USER}"
-            echo "password=${SMB_PASS}"
-        } > "$CREDF"
-  chmod 600 "$CREDF"
-        
-        # Mount the entire SMB share
-        grep -qE "[[:space:]]$SMB_MOUNT_POINT[[:space:]]" /etc/fstab || \
-            echo "//${UNRAID_HOST}/${UNRAID_SHARE}  ${SMB_MOUNT_POINT}  cifs  credentials=${CREDF},iocharset=utf8  0  0" >> /etc/fstab
-        exec_with_spinner "Mounting SMB share..." mount -a || {
-            print_error "Failed to mount SMB share. Check credentials and share name."
-            exit 1
-        }
-        
-        # Create the domain-specific subfolder
-        mkdir -p "$VM_MOUNT"
+    print_info "Adding fstab placeholder for PCI-based mount..."
+
+    # Add commented placeholder to fstab if it doesn't already exist
+    if ! grep -q "# PCI-based mount for Supabase storage" /etc/fstab 2>/dev/null; then
+        echo "" >> /etc/fstab
+        echo "# PCI-based mount for Supabase storage - configure via Unraid VM editor" >> /etc/fstab
+        echo "# Set mount tag to 'unraid' in Unraid VM editor - it will automatically mount to /mnt/user" >> /etc/fstab
+        echo "# No fstab entry needed - Unraid VM editor handles the mount automatically" >> /etc/fstab
+        log "Added fstab placeholder for PCI-based mount (unraid tag -> /mnt/user)"
+        print_success "fstab placeholder added"
+    else
+        print_success "fstab placeholder already exists"
     fi
-    log "Storage mounted at $VM_MOUNT"
+
+    print_info "Configure PCI passthrough in Unraid VM editor with mount tag 'unraid' (auto-mounts to /mnt/user)"
 fi
 
 # Create docker-compose.override.yml for Unraid-specific configuration
 print_info "Creating docker-compose.override.yml..."
+
+# Determine port bindings based on pinning preferences
+if [[ "$PIN_HTTPS_LOOPBACK" = "y" ]]; then
+    KONG_HTTPS_BIND="127.0.0.1:${KONG_HTTPS_PORT}:8443"
+else
+    KONG_HTTPS_BIND="0.0.0.0:${KONG_HTTPS_PORT}:8443"
+fi
+
+# Kong HTTP port binding (always network accessible for proxying)
+KONG_HTTP_BIND="${KONG_HTTP_PORT}:8000"
+
+if [[ "$PIN_POOLER_LOOPBACK" = "y" ]]; then
+    POOLER_BIND="127.0.0.1:6543:6543"
+else
+    POOLER_BIND="0.0.0.0:6543:6543"
+fi
+
 cat > docker-compose.override.yml <<YAML
 # UNRAID-specific configuration
 # Overrides for $APEX_FQDN deployment
 
 services:
+  # Port security configuration
+  kong:
+    ports:
+      - "${KONG_HTTP_BIND}"
+      - "${KONG_HTTPS_BIND}"
+
+  studio:
+    ports:
+      - "3000:3000"
+
+  supavisor:
+    ports:
+      - "${POOLER_BIND}"
+
+  # Disable external access to sensitive services
+  db:
+    ports: []
+  auth:
+    ports: []
+  rest:
+    ports: []
+  realtime:
+    ports: []
+
+  # PCI-based mount for Supabase storage - configure via Unraid VM editor
+  # Set mount tag to 'unraid' in Unraid VM editor (auto-mounts to /mnt/user)
+  # After configuring PCI passthrough, uncomment the storage section below:
+  # storage:
+  #   ports: []
+  #   volumes:
+  #     - ${VM_MOUNT}:/var/lib/storage
+  #   environment:
+  #     - STORAGE_TENANT_ID=${APEX_FQDN}
+  #     - STORAGE_S3_REGION=local
+  #     - STORAGE_S3_BUCKET=unraid
+  # Note: These environment variables replace the "stub" backend for self-hosted deployments
 YAML
 
 # Conditionally expose Studio on LAN
@@ -857,13 +870,10 @@ else
     print_info "Studio accessible only via reverse proxy (no port exposed)"
 fi
 
-# Add storage volume if enabled
 if [[ "$ENABLE_STORAGE" = "y" ]]; then
-    cat >> docker-compose.override.yml <<YAML
-  storage:
-    volumes:
-      - ${VM_MOUNT}:/var/lib/storage
-YAML
+    # Note: Storage volume mount is commented out above
+    # User must configure PCI passthrough via Unraid VM editor, then uncomment the storage section
+    log "Storage enabled - PCI mount placeholder added to docker-compose.override.yml"
 fi
 
 log "Docker compose override created"
