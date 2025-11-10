@@ -259,17 +259,7 @@ ENABLE_EDGE=$(ask_yn "Enable Edge Functions?" "y")
 # The 2GB RAM cost is worth it for full functionality and monitoring capabilities
 ENABLE_ANALYTICS="y"
 
-# Studio dashboard access configuration
-echo
-print_info "Studio Dashboard Configuration"
-print_warning "⚠️  Security Note:"
-echo "  Studio is your admin dashboard with full database access"
-echo "  Default: Accessible only via reverse proxy (recommended secure method)"
-echo "  LAN Option: Open port 3000 on local network (less secure but convenient)"
-echo
-EXPOSE_STUDIO_LAN=$(ask_yn "Open Studio on port 3000 for LAN-only access?" "n")
-
-log "Feature selection: Email=$ENABLE_EMAIL Phone=$ENABLE_PHONE Anonymous=$ENABLE_ANONYMOUS Storage=$ENABLE_STORAGE Realtime=$ENABLE_REALTIME Edge=$ENABLE_EDGE Analytics=$ENABLE_ANALYTICS StudioLAN=$EXPOSE_STUDIO_LAN"
+log "Feature selection: Email=$ENABLE_EMAIL Phone=$ENABLE_PHONE Anonymous=$ENABLE_ANONYMOUS Storage=$ENABLE_STORAGE Realtime=$ENABLE_REALTIME Edge=$ENABLE_EDGE Analytics=$ENABLE_ANALYTICS"
 
 # STEP 2: Generating Secrets
 print_step_header "2" "GENERATING SECRETS"
@@ -529,18 +519,6 @@ if [[ "$ENABLE_PHONE" = "y" ]] && [[ -n "$TWILIO_ACCOUNT_SID" ]]; then
     printf "${C_WHITE}Twilio SMS Configuration:${C_RESET}\n"
     print_config_line "Account SID" "${TWILIO_ACCOUNT_SID:0:10}..."
     print_config_line "Phone Number" "$TWILIO_PHONE_NUMBER"
-    echo
-fi
-
-if [[ "$EXPOSE_STUDIO_LAN" = "y" ]]; then
-    printf "${C_WHITE}Studio Dashboard:${C_RESET}
-"
-    print_config_line "LAN Access" "127.0.0.1:3000"
-    echo
-else
-    printf "${C_WHITE}Studio Dashboard:${C_RESET}
-"
-    print_config_line "LAN Access" "Disabled (reverse proxy only)"
     echo
 fi
 
@@ -857,21 +835,8 @@ services:
   # Note: These environment variables replace the "stub" backend for self-hosted deployments
 YAML
 
-# Conditionally expose Studio on LAN
-if [[ "$EXPOSE_STUDIO_LAN" = "y" ]]; then
-    print_warning "⚠️  Studio will be accessible on port 3000 (LAN only)"
-    # Don't add any binding - let Docker use default 0.0.0.0:3000
-    # This makes it accessible from other LAN machines
-else
-    print_info "Studio accessible only via reverse proxy (no port exposed)"
-    # If they DON'T want LAN access, lock it down to localhost only
-    cat >> docker-compose.override.yml <<YAML
-  studio:
-    ports:
-      - "127.0.0.1:3000:3000"
-
-YAML
-fi
+# Studio runs on default port 3000 (accessible on the network)
+# Users can secure access via UFW firewall or pin ports manually in override.yml if needed
 
 if [[ "$ENABLE_STORAGE" = "y" ]]; then
     # Note: Storage volume mount is commented out above
