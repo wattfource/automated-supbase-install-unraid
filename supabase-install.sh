@@ -860,14 +860,17 @@ YAML
 # Conditionally expose Studio on LAN
 if [[ "$EXPOSE_STUDIO_LAN" = "y" ]]; then
     print_warning "⚠️  Studio will be accessible on port 3000 (LAN only)"
+    # Don't add any binding - let Docker use default 0.0.0.0:3000
+    # This makes it accessible from other LAN machines
+else
+    print_info "Studio accessible only via reverse proxy (no port exposed)"
+    # If they DON'T want LAN access, lock it down to localhost only
     cat >> docker-compose.override.yml <<YAML
   studio:
     ports:
       - "127.0.0.1:3000:3000"
 
 YAML
-else
-    print_info "Studio accessible only via reverse proxy (no port exposed)"
 fi
 
 if [[ "$ENABLE_STORAGE" = "y" ]]; then
